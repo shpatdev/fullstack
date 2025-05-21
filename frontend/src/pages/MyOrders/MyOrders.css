@@ -1,0 +1,53 @@
+.my-orders {
+    margin: 50px auto;
+    width: 80%;
+    max-width: 1000px;
+}
+
+.my-orders h2 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+.orders-list {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.order-card {
+    border: 1px solid #e2e2e2;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.order-card h3 {
+    font-size: 18px;
+    color: tomato;
+    margin-bottom: 10px;
+}
+
+.order-card p {
+    margin-bottom: 8px;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.order-card h4 {
+    font-size: 16px;
+    margin-top: 15px;
+    margin-bottom: 5px;
+}
+
+.order-card ul {
+    list-style: disc;
+    padding-left: 20px;
+}
+
+.order-card ul li {
+    font-size: 14px;
+    margin-bottom: 4px;
+}
