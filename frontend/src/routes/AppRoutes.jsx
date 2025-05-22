@@ -7,7 +7,7 @@ import AuthLayout from '../layouts/AuthLayout.jsx';
 import CustomerLayout from '../layouts/CustomerLayout.jsx';
 import RestaurantOwnerLayout from '../layouts/RestaurantOwnerLayout.jsx';
 import DriverLayout from '../layouts/DriverLayout.jsx';
-import AdminLayout from '../layouts/AdminLayout.jsx'; // UNCOMMENTED
+import AdminLayout from '../layouts/AdminLayout.jsx';
 
 // --- Protected Route Component ---
 import ProtectedRoute from '../components/ProtectedRoute.jsx';
@@ -15,7 +15,6 @@ import ProtectedRoute from '../components/ProtectedRoute.jsx';
 // --- Auth Pages ---
 import LoginPage from '../modules/auth/pages/Login.jsx';
 import RegisterPage from '../modules/auth/pages/Register.jsx';
-// import AdminLoginPage from '../modules/auth/pages/AdminLoginPage.jsx'; // Consider if needed or use general login
 
 // --- Customer Pages ---
 import RestaurantListPage from '../modules/customer/pages/RestaurantListPage.jsx';
@@ -27,28 +26,26 @@ import OrderConfirmationPage from '../modules/customer/pages/OrderConfirmationPa
 import MyOrdersPage from '../modules/customer/pages/MyOrdersPage.jsx';
 
 // --- Restaurant Owner Pages ---
-// CORRECTED IMPORTS:
-import RO_OverviewPage from '../modules/restaurant/pages/Overview.jsx'; // UNCOMMENTED
-// import ManageOrdersPage from '../modules/restaurant/pages/ManageOrdersPage.jsx';
-// import MenuManagementPage from '../modules/restaurant/pages/MenuManagementPage.jsx';
-// import RestaurantSettingsPage from '../modules/restaurant/pages/RestaurantSettingsPage.jsx';
-// import RO_CustomerReviewsPage from '../modules/restaurant/pages/CustomerReviewsPage.jsx';
-// import RO_AnalyticsPage from '../modules/restaurant/pages/AnalyticsPage.jsx';
+import RO_OverviewPage from '../modules/restaurant/pages/Overview.jsx';
+import RO_ManageOrdersPage from '../modules/restaurant/pages/ManageOrdersPage.jsx';
+import RO_MenuManagementPage from '../modules/restaurant/pages/MenuManagementPage.jsx';
+import RO_RestaurantSettingsPage from '../modules/restaurant/pages/RestaurantSettingsPage.jsx';
+// import RO_CustomerReviewsPage from '../modules/restaurant/pages/CustomerReviewsPage.jsx'; // If you have these
+// import RO_AnalyticsPage from '../modules/restaurant/pages/AnalyticsPage.jsx';       // If you have these
 
 // --- Courier/Driver Pages ---
-import DriverDashboardPage from '../modules/courier/pages/DriverDashboardPage.jsx'; // UNCOMMENTED
+import DriverDashboardPage from '../modules/courier/pages/DriverDashboardPage.jsx';
 
 // --- Admin Pages ---
-import AdminOverviewPage from '../modules/admin/pages/AdminOverviewPage.jsx'; // UNCOMMENTED
-import AdminManageUsersPage from '../modules/admin/pages/ManageUsersPage.jsx'; // UNCOMMENTED
-// import AdminManageRestaurantsPage from '../modules/admin/pages/ManageRestaurantsPage.jsx'; // COMMENTED
-// import AdminOrdersPage from '../modules/admin/pages/AdminOrdersPage.jsx';
-// import AdminSettingsPage from '../modules/admin/pages/AdminSettingsPage.jsx';
+import AdminOverviewPage from '../modules/admin/pages/AdminOverviewPage.jsx';
+import AdminManageUsersPage from '../modules/admin/pages/ManageUsersPage.jsx';
+import AdminManageRestaurantsPage from '../modules/admin/pages/ManageRestaurantsPage.jsx';
+import AdminOrdersPage from '../modules/admin/pages/AdminOrdersPage.jsx';       // If you have this
+import AdminSettingsPage from '../modules/admin/pages/AdminSettingsPage.jsx'; // If you have this
 
 
 // Fallback Page (404)
 const NotFoundPage = () => (
-    // ... (your NotFoundPage code)
     <div className="min-h-screen flex flex-col items-center justify-center text-center p-4 bg-gray-100">
         <h1 className="text-6xl font-bold text-red-500 mb-4">404</h1>
         <p className="text-2xl text-gray-700 mb-2">Oops! Page Not Found.</p>
@@ -66,9 +63,6 @@ const AppRoutes = () => {
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        {/* Example for a specific admin login if you choose to have one
-        <Route path="/admin/login" element={<AdminLoginPage />} />
-        */}
       </Route>
 
       {/* --- Customer Routes --- */}
@@ -76,71 +70,42 @@ const AppRoutes = () => {
         <Route index element={<RestaurantListPage />} />
         <Route path="home" element={<RestaurantListPage />} />
         <Route path="restaurants/:restaurantId" element={<RestaurantDetailPage />} />
-        <Route path="cart" element={
-            <ProtectedRoute allowedRoles={['CUSTOMER']}> <CartPage /> </ProtectedRoute>
-        }/>
-        <Route path="checkout" element={
-            <ProtectedRoute allowedRoles={['CUSTOMER']}> <CheckoutPage /> </ProtectedRoute>
-        }/>
-        <Route path="order-confirmation/:orderId" element={
-            <ProtectedRoute allowedRoles={['CUSTOMER']}> <OrderConfirmationPage /> </ProtectedRoute>
-        }/>
-        <Route path="my-orders" element={
-             <ProtectedRoute allowedRoles={['CUSTOMER']}> <MyOrdersPage /> </ProtectedRoute>
-        }/>
-        <Route path="profile" element={
-            <ProtectedRoute allowedRoles={['CUSTOMER', 'RESTAURANT_OWNER', 'DRIVER', 'ADMIN']}> <ProfilePage /> </ProtectedRoute>
-        }/>
+        <Route path="cart" element={ <ProtectedRoute allowedRoles={['CUSTOMER']}> <CartPage /> </ProtectedRoute> }/>
+        <Route path="checkout" element={ <ProtectedRoute allowedRoles={['CUSTOMER']}> <CheckoutPage /> </ProtectedRoute> }/>
+        <Route path="order-confirmation/:orderId" element={ <ProtectedRoute allowedRoles={['CUSTOMER']}> <OrderConfirmationPage /> </ProtectedRoute> }/>
+        <Route path="my-orders" element={ <ProtectedRoute allowedRoles={['CUSTOMER']}> <MyOrdersPage /> </ProtectedRoute> }/>
+        <Route path="profile" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'RESTAURANT_OWNER', 'DRIVER', 'ADMIN']}> <ProfilePage /> </ProtectedRoute> }/>
       </Route>
 
-      {/* --- Restaurant Owner Routes --- UNCOMMENTING THIS BLOCK --- */}
-      <Route
-        path="/restaurant"
-        element={
-          <ProtectedRoute allowedRoles={['RESTAURANT_OWNER', 'ADMIN']}>
-            <RestaurantOwnerLayout />
-          </ProtectedRoute>
-        }
-      >
+      {/* --- Restaurant Owner Routes --- */}
+      <Route path="/restaurant" element={ <ProtectedRoute allowedRoles={['RESTAURANT_OWNER', 'ADMIN']}> <RestaurantOwnerLayout /> </ProtectedRoute> } >
         <Route index element={<RO_OverviewPage />} />
         <Route path="dashboard" element={<RO_OverviewPage />} />
-        {/* <Route path="orders" element={<ManageOrdersPage />} /> ... etc. */}
+        <Route path="orders" element={<RO_ManageOrdersPage />} />
+        <Route path="menu" element={<RO_MenuManagementPage />} />
+        <Route path="settings" element={<RO_RestaurantSettingsPage />} />
+        {/* <Route path="reviews" element={<RO_CustomerReviewsPage />} /> */}
+        {/* <Route path="analytics" element={<RO_AnalyticsPage />} /> */}
       </Route>
 
       {/* --- Courier/Driver Routes --- */}
-      <Route
-        path="/driver"
-        element={
-          <ProtectedRoute allowedRoles={['DRIVER', 'ADMIN']}> {/* Ensure ProtectedRoute import is also active */}
-            <DriverLayout />
-          </ProtectedRoute>
-        }
-      >
+      <Route path="/driver" element={ <ProtectedRoute allowedRoles={['DRIVER', 'ADMIN']}> <DriverLayout /> </ProtectedRoute> } >
         <Route index element={<DriverDashboardPage />} />
         <Route path="dashboard" element={<DriverDashboardPage />} />
-        {/* Add other Driver routes here if any, but keep them commented for now */}
       </Route>
 
       {/* --- Admin Routes --- */}
-      <Route
-        path="/admin"
-        element={
-          <ProtectedRoute allowedRoles={['ADMIN']}> {/* Ensure ProtectedRoute import is also active */}
-            <AdminLayout />
-          </ProtectedRoute>
-        }
-      >
+      <Route path="/admin" element={ <ProtectedRoute allowedRoles={['ADMIN']}> <AdminLayout /> </ProtectedRoute> } >
         <Route index element={<AdminOverviewPage />} />
         <Route path="dashboard" element={<AdminOverviewPage />} />
-        <Route path="users" element={<AdminManageUsersPage />} /> {/* UNCOMMENTED */}
-        {/* <Route path="restaurants" element={<AdminManageRestaurantsPage />} /> */}
-        {/* Other admin routes remain commented for now */}
+        <Route path="users" element={<AdminManageUsersPage />} />
+        <Route path="restaurants" element={<AdminManageRestaurantsPage />} />
+        <Route path="orders" element={<AdminOrdersPage />} /> {/* Uncomment if AdminOrdersPage.jsx exists and is correct */}
+        <Route path="settings" element={<AdminSettingsPage />} /> {/* Uncomment if AdminSettingsPage.jsx exists and is correct */}
       </Route>
 
-      {/* Fallback for any other route */}
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 };
-
 export default AppRoutes;
