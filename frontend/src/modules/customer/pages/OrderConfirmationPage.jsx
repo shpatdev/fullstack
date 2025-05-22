@@ -53,4 +53,5 @@ const OrderConfirmationPage = () => {
         </div>
     );
 };
+
 export default OrderConfirmationPage;

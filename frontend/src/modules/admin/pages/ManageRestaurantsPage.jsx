@@ -211,4 +211,5 @@ const ManageRestaurantsPage = () => {
         </div>
     );
 };
+
 export default ManageRestaurantsPage;

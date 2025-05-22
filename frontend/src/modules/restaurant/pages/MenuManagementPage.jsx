@@ -259,4 +259,5 @@ const MenuManagementPage = () => {
      </div>
  );
 };
+
 export default MenuManagementPage;

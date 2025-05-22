@@ -1,6 +1,6 @@
 // src/modules/customer/pages/RestaurantDetailPage.jsx
 import React, { useState, useEffect } from 'react'; // useContext removed
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { customerApi } from '../../../api/customerApi.js';
 import { useCart } from '../../../context/CartContext.jsx'; // Changed import
 import { useAuth } from '../../../context/AuthContext.jsx';
@@ -120,4 +120,5 @@ const RestaurantDetailPage = () => {
     </div>
   );
 };
+
 export default RestaurantDetailPage;
