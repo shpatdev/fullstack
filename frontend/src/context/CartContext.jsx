@@ -1,56 +1,72 @@
 // src/context/CartContext.jsx
 import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
-import { customerApi } from '../api/customerApi.js'; // Import your customerApi
-import { AuthContext } from './AuthContext.jsx';
+import { customerApi } from '../api/customerApi.js'; // Assuming this path
+import { AuthContext } from './AuthContext.jsx';   // Assuming this path
 
 const CartContext = createContext(null);
 
 export const CartProvider = ({ children }) => {
-  const [cart, setCart] = useState(null); // Will hold { id, user, items: [], ... } from API
+  const [cart, setCart] = useState({ id: null, user: null, items: [], total_amount: "0.00" });
   const [loadingCart, setLoadingCart] = useState(false);
   const [cartError, setCartError] = useState(null);
-  const { isAuthenticated, token } = useContext(AuthContext); // Use real token
+  const { isAuthenticated, token, user } = useContext(AuthContext);
 
   const fetchCart = useCallback(async () => {
     if (!isAuthenticated || !token) {
-      setCart(null); // Clear cart if not authenticated
+      setCart({ id: null, user: null, items: [], total_amount: "0.00" });
+      setLoadingCart(false); // Ensure loading is set to false
       return;
     }
     setLoadingCart(true);
     setCartError(null);
     try {
-      const cartData = await customerApi.fetchUserCart(); // Token is now handled by apiService via customerApi
-      setCart(cartData || { id: null, user: null, items: [] }); // Handle case where API might return null/undefined for empty cart
+      const cartData = await customerApi.fetchUserCart(); // Mock API call
+      setCart(cartData || { id: user?.id || null, user: user?.id || null, items: [], total_amount: "0.00" }); // Ensure cart is an object
     } catch (error) {
       console.error("Error fetching cart in context:", error);
       setCartError(error.message || "Could not load cart.");
-      setCart(null);
+      setCart({ id: user?.id || null, user: user?.id || null, items: [], total_amount: "0.00" });
     } finally {
       setLoadingCart(false);
     }
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, token, user]);
 
   useEffect(() => {
     fetchCart();
   }, [fetchCart]);
 
   const addItemToCart = async (menuItemId, quantity, menuItemDetails) => {
-    if (!isAuthenticated) throw new Error("User not authenticated. Please login.");
+    if (!isAuthenticated) {
+      // It's better to throw an error or use a notification system
+      // than window.alert if possible.
+      window.alert("Please login to add items to your cart.");
+      // Consider navigating to login: navigate('/login');
+      throw new Error("User not authenticated. Please login.");
+    }
     setLoadingCart(true);
     try {
-      await customerApi.addItemToCart(menuItemId, quantity); // Token handled by apiService
-      await fetchCart(); // Re-fetch cart to ensure it's up-to-date
+      // Simulate API call and then update based on its conceptual success
+      // In a real scenario, the backend would return the updated cart or cart item
+      const mockApiResponse = await customerApi.addItemToCart(menuItemId, quantity, menuItemDetails);
       
-      // Feedback (can be replaced with a global notification system)
-      const feedbackEl = document.createElement('div');
-      feedbackEl.className = 'fixed bottom-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg text-sm z-[200]';
-      feedbackEl.textContent = `${menuItemDetails?.name || 'Item'} added to cart!`;
-      document.body.appendChild(feedbackEl);
-      setTimeout(() => { feedbackEl.remove(); }, 2500);
+      // For mock, we re-fetch. A real API might return the updated cart directly.
+      if (mockApiResponse.success) {
+        await fetchCart(); 
+        
+        // Feedback (can be replaced with a global notification system)
+        const feedbackEl = document.createElement('div');
+        feedbackEl.className = 'fixed bottom-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg text-sm z-[200]';
+        feedbackEl.textContent = `${menuItemDetails?.name || 'Item'} added to cart!`;
+        document.body.appendChild(feedbackEl);
+        setTimeout(() => { feedbackEl.remove(); }, 2500);
+      } else {
+        throw new Error(mockApiResponse.message || "Failed to add item.");
+      }
 
     } catch (error) {
       console.error("Error adding item to cart in context:", error);
-      // Using window.alert for simplicity, replace with a proper notification system
+      setCartError(error.message || "Could not add item to cart.");
+      // Show notification to user here
       window.alert(error.message || "Could not add item to cart.");
       throw error;
     } finally {
@@ -60,20 +76,21 @@ export const CartProvider = ({ children }) => {
 
   const updateItemQuantity = async (cartItemId, newQuantity) => {
     if (!isAuthenticated) throw new Error("User not authenticated.");
-    if (newQuantity < 1) {
-        await removeItemFromCart(cartItemId); // If quantity is less than 1, remove
-        return;
-    }
     setLoadingCart(true);
     try {
+      if (newQuantity < 1) { // If quantity is less than 1, remove the item
+        await customerApi.removeCartItem(cartItemId);
+      } else {
         await customerApi.updateCartItemQuantity(cartItemId, newQuantity);
-        await fetchCart();
+      }
+      await fetchCart(); // Re-fetch for consistency
     } catch (error) {
-        console.error("Error updating cart item quantity:", error);
-        window.alert(error.message || "Could not update item quantity.");
-        throw error;
+      console.error("Error updating cart item quantity:", error);
+      setCartError(error.message || "Could not update item quantity.");
+      window.alert(error.message || "Could not update item quantity.");
+      throw error;
     } finally {
-        setLoadingCart(false);
+      setLoadingCart(false);
     }
   };
 
@@ -81,18 +98,28 @@ export const CartProvider = ({ children }) => {
     if (!isAuthenticated) throw new Error("User not authenticated.");
     setLoadingCart(true);
     try {
-        await customerApi.removeCartItem(cartItemId);
-        await fetchCart();
+      await customerApi.removeCartItem(cartItemId);
+      await fetchCart(); // Re-fetch for consistency
     } catch (error) {
-        console.error("Error removing item from cart:", error);
-        window.alert(error.message || "Could not remove item.");
-        throw error;
+      console.error("Error removing item from cart:", error);
+      setCartError(error.message || "Could not remove item.");
+      window.alert(error.message || "Could not remove item.");
+      throw error;
     } finally {
-        setLoadingCart(false);
+      setLoadingCart(false);
     }
   };
 
-  // Value also includes loading and error states for consumers to use
+  const clearCart = async () => {
+    if (!isAuthenticated) return;
+    console.log("CartContext: Clearing cart (simulated)");
+    // For real API: await customerApi.clearUserCart(); 
+    // For mock:
+    setCart({ id: cart?.id, user: cart?.user, items: [], total_amount: "0.00" });
+    localStorage.setItem('mockCartItems', JSON.stringify([])); // If you were using this for mock persistence
+    // showNotification("Cart cleared!", "info"); // Use your notification system
+  };
+
   const contextValue = { 
     cart, 
     loadingCart, 
@@ -100,7 +127,8 @@ export const CartProvider = ({ children }) => {
     addItemToCart, 
     fetchCart, 
     updateItemQuantity, 
-    removeItemFromCart 
+    removeItemFromCart,
+    clearCart 
   };
 
   return (
@@ -110,4 +138,10 @@ export const CartProvider = ({ children }) => {
   );
 };
 
-export const useCart = () => useContext(CartContext);
+export const useCart = () => {
+    const context = useContext(CartContext);
+    if (context === undefined) {
+        throw new Error('useCart must be used within a CartProvider');
+    }
+    return context;
+};

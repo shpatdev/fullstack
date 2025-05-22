@@ -1,106 +1,163 @@
 // src/api/adminApi.js
 import { apiService } from './apiService.js'; // Assuming your generic helper
 
-// Mock data stores from Gemini's Admin App.jsx
-// Remove these when connecting to real API
-let mockApiUsersDataAdmin = [ /* ... copy from Gemini ... */ 
+// --- Mock Data Stores (from Gemini's Admin App.jsx) ---
+// These should be removed when connecting to real API.
+let mockApiUsersDataForAdmin = [
     { id: 1, username: "johndoe", email: "john@example.com", role: "CUSTOMER", status: "ACTIVE", date_joined: "2023-01-15T10:00:00Z" },
-    // ... more users
+    { id: 2, username: "janerestaurant", email: "jane@restaurant.com", role: "RESTAURANT_OWNER", status: "ACTIVE", date_joined: "2023-02-20T11:30:00Z" },
+    { id: 3, username: "delivercharlie", email: "charlie@delivery.co", role: "DELIVERY_PERSONNEL", status: "SUSPENDED", date_joined: "2023-03-10T09:15:00Z" },
+    { id: 4, username: "adminuser", email: "admin@fooddash.com", role: "ADMIN", status: "ACTIVE", date_joined: "2023-01-01T08:00:00Z" },
+    { id: 5, username: "pendingapproval", email: "pending@example.com", role: "RESTAURANT_OWNER", status: "PENDING_APPROVAL", date_joined: "2024-05-20T12:00:00Z" },
+    { id: 6, username: "owner_bob", email: "bob@owner.com", role: "RESTAURANT_OWNER", status: "ACTIVE", date_joined: "2022-11-10T08:00:00Z"},
 ];
-let nextUserIdAdmin = mockApiUsersDataAdmin.length > 0 ? Math.max(...mockApiUsersDataAdmin.map(u => u.id)) + 1 : 1;
+let nextUserIdForAdmin = mockApiUsersDataForAdmin.length > 0 ? Math.max(...mockApiUsersDataForAdmin.map(u => u.id)) + 1 : 1;
 
-let mockApiRestaurantsDataAdmin = [ /* ... copy from Gemini ... */ 
+let mockApiRestaurantsDataForAdmin = [
     { id: 1, name: "Luigi's Pizzeria", address: "123 Pizza St", phone: "555-1234", image: "https://placehold.co/100x100/E81123/white?text=Pizza", categories: [{ id: 1, name: "Italian" }, {id: 2, name: "Pizza"}], owner: 2, owner_details: { id: 2, username: "janerestaurant" }, is_active: true, is_approved: true, date_created: "2023-03-01T14:00:00Z" },
-    // ... more restaurants
+    { id: 2, name: "Burger Queen", address: "456 Burger Ln", phone: "555-5678", image: "https://placehold.co/100x100/F7630C/white?text=Burger", categories: [{ id: 3, name: "Burgers" }], owner: 6, owner_details: { id: 6, username: "owner_bob" }, is_active: false, is_approved: true, date_created: "2023-04-15T10:00:00Z" },
+    { id: 3, name: "Sushi Spot", address: "789 Fish Rd", phone: "555-9012", image: "https://placehold.co/100x100/0078D4/white?text=Sushi", categories: [{ id: 4, name: "Japanese" }, {id: 5, name: "Sushi"}], owner: null, owner_details: null, is_active: false, is_approved: false, date_created: "2024-05-01T09:00:00Z" },
 ];
-let nextRestaurantIdAdmin = mockApiRestaurantsDataAdmin.length > 0 ? Math.max(...mockApiRestaurantsDataAdmin.map(r => r.id)) + 1 : 1;
+let nextRestaurantIdForAdmin = mockApiRestaurantsDataForAdmin.length > 0 ? Math.max(...mockApiRestaurantsDataForAdmin.map(r => r.id)) + 1 : 1;
 
+let mockRestaurantCategoriesForAdmin = [ // Mock for system-wide restaurant categories
+    { id: 1, name: "Italian" }, { id: 2, name: "Pizza" }, { id: 3, name: "Burgers" },
+    { id: 4, name: "Japanese" }, { id: 5, name: "Sushi" }, { id: 6, name: "Fast Food"}
+];
+let nextRestaurantCategoryIdForAdmin = mockRestaurantCategoriesForAdmin.length > 0 ? Math.max(...mockRestaurantCategoriesForAdmin.map(c => c.id)) + 1 : 1;
+// --- End Mock Data ---
+
+const MOCK_API_DELAY_ADMIN = 500;
 
 export const adminApi = {
   // --- User CRUD ---
   fetchAllUsers: async (token) => {
     console.log("ADMIN API: Fetching all users");
     // REAL: return apiService.request('/users/', { headers: { 'Authorization': `Bearer ${token}` } });
-    // Mock:
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return [...mockApiUsersDataAdmin];
+    if (!token) return Promise.reject({ message: "Admin not authenticated." });
+    await new Promise(resolve => setTimeout(resolve, MOCK_API_DELAY_ADMIN));
+    return Promise.resolve([...mockApiUsersDataForAdmin]);
   },
   createUser: async (userData, token) => {
     console.log("ADMIN API: Creating user:", userData);
-    // REAL: return apiService.request('/users/', { method: 'POST', body: JSON.stringify(userData), headers: { 'Authorization': `Bearer ${token}` } }); 
-    // OR /api/register/ if it handles admin creation with role
-    // Mock:
-    await new Promise(resolve => setTimeout(resolve, 500));
-    if (mockApiUsersDataAdmin.some(u => u.username === userData.username)) throw new Error("Username already exists (mock).");
-    if (mockApiUsersDataAdmin.some(u => u.email === userData.email)) throw new Error("Email already exists (mock).");
-    const newUser = { id: nextUserIdAdmin++, ...userData, date_joined: new Date().toISOString() };
-    mockApiUsersDataAdmin.push(newUser);
-    return newUser;
+    // REAL: return apiService.request('/users/', { method: 'POST', body: JSON.stringify(userData), headers: { 'Authorization': `Bearer ${token}` } });
+    // OR use /api/register/ if admins can set role through it
+    if (!token) return Promise.reject({ message: "Admin not authenticated." });
+    await new Promise(resolve => setTimeout(resolve, MOCK_API_DELAY_ADMIN));
+    if (mockApiUsersDataForAdmin.some(u => u.username === userData.username)) return Promise.reject({ message: "Username already exists (mock)." });
+    if (mockApiUsersDataForAdmin.some(u => u.email === userData.email)) return Promise.reject({ message: "Email already exists (mock)." });
+    const newUser = { id: nextUserIdForAdmin++, ...userData, date_joined: new Date().toISOString() };
+    mockApiUsersDataForAdmin.push(newUser);
+    return Promise.resolve(newUser);
   },
   updateUser: async (userId, userData, token) => {
     console.log("ADMIN API: Updating user:", userId, userData);
     // REAL: return apiService.request(`/users/${userId}/`, { method: 'PATCH', body: JSON.stringify(userData), headers: { 'Authorization': `Bearer ${token}` } });
-    // Mock:
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const userIndex = mockApiUsersDataAdmin.findIndex(u => u.id === userId);
-    if (userIndex === -1) throw new Error("User not found (mock).");
-    // Add unique checks for username/email if being updated
-    mockApiUsersDataAdmin[userIndex] = { ...mockApiUsersDataAdmin[userIndex], ...userData };
-    return mockApiUsersDataAdmin[userIndex];
+    if (!token) return Promise.reject({ message: "Admin not authenticated." });
+    await new Promise(resolve => setTimeout(resolve, MOCK_API_DELAY_ADMIN));
+    const userIndex = mockApiUsersDataForAdmin.findIndex(u => u.id === userId);
+    if (userIndex === -1) return Promise.reject({ message: "User not found (mock)." });
+    mockApiUsersDataForAdmin[userIndex] = { ...mockApiUsersDataForAdmin[userIndex], ...userData };
+    return Promise.resolve(mockApiUsersDataForAdmin[userIndex]);
   },
   deleteUser: async (userId, token) => {
     console.log("ADMIN API: Deleting user:", userId);
     // REAL: return apiService.request(`/users/${userId}/`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
-    // Mock:
-    await new Promise(resolve => setTimeout(resolve, 500));
-    mockApiUsersDataAdmin = mockApiUsersDataAdmin.filter(u => u.id !== userId);
-    return { message: "User deleted (mock)" };
+    if (!token) return Promise.reject({ message: "Admin not authenticated." });
+    await new Promise(resolve => setTimeout(resolve, MOCK_API_DELAY_ADMIN));
+    mockApiUsersDataForAdmin = mockApiUsersDataForAdmin.filter(u => u.id !== userId);
+    return Promise.resolve({ message: "User deleted (mock)" });
   },
 
   // --- Restaurant CRUD ---
   fetchAllRestaurants: async (token) => {
     console.log("ADMIN API: Fetching all restaurants");
     // REAL: return apiService.request('/restaurants/', { headers: { 'Authorization': `Bearer ${token}` } });
-    // Mock:
-    await new Promise(resolve => setTimeout(resolve, 600));
-    return mockApiRestaurantsDataAdmin.map(r => {
-        if (r.owner && !r.owner_details) {
-            const owner = mockApiUsersDataAdmin.find(u => u.id === r.owner);
-            return { ...r, owner_details: owner ? { id: owner.id, username: owner.username } : null };
-        }
-        return r;
-    });
+    if (!token) return Promise.reject({ message: "Admin not authenticated." });
+    await new Promise(resolve => setTimeout(resolve, MOCK_API_DELAY_ADMIN + 100)); // Slightly longer delay
+    return Promise.resolve(mockApiRestaurantsDataForAdmin.map(r => {
+        const owner = mockApiUsersDataForAdmin.find(u => u.id === r.owner);
+        return { ...r, owner_details: owner ? { id: owner.id, username: owner.username, email: owner.email } : null };
+    }));
   },
-  fetchPotentialOwners: async (token) => {
+  fetchPotentialOwners: async (token) => { // Users who can be restaurant owners
     console.log("ADMIN API: Fetching potential owners");
     // REAL: return apiService.request('/users/?role__in=RESTAURANT_OWNER,ADMIN', { headers: { 'Authorization': `Bearer ${token}` } });
-    // Mock:
-    await new Promise(resolve => setTimeout(resolve, 300));
-    return mockApiUsersDataAdmin
-        .filter(u => u.role === "RESTAURANT_OWNER" || u.role === "ADMIN")
-        .map(u => ({ id: u.id, username: u.username, email: u.email }));
+    if (!token) return Promise.reject({ message: "Admin not authenticated." });
+    await new Promise(resolve => setTimeout(resolve, MOCK_API_DELAY_ADMIN - 200));
+    return Promise.resolve(
+        mockApiUsersDataForAdmin
+            .filter(u => u.role === "RESTAURANT_OWNER" || u.role === "ADMIN")
+            .map(u => ({ id: u.id, username: u.username, email: u.email }))
+    );
   },
   createRestaurant: async (restaurantData, token) => {
     console.log("ADMIN API: Creating restaurant:", restaurantData);
     // REAL: return apiService.request('/restaurants/', { method: 'POST', body: JSON.stringify(restaurantData), headers: { 'Authorization': `Bearer ${token}` } });
-    // Mock:
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const newRestaurant = { id: nextRestaurantIdAdmin++, ...restaurantData, date_created: new Date().toISOString(), owner_details: restaurantData.owner ? mockApiUsersDataAdmin.find(u=>u.id === restaurantData.owner) : null };
-    mockApiRestaurantsDataAdmin.push(newRestaurant);
-    return newRestaurant;
+    // restaurantData is expected to have: name, address, phone, owner (ID), is_active, is_approved, category_ids (array of category PKs)
+    if (!token) return Promise.reject({ message: "Admin not authenticated." });
+    await new Promise(resolve => setTimeout(resolve, MOCK_API_DELAY_ADMIN));
+    
+    let processedCategories = [];
+    if (restaurantData.categories) { // Assuming categories came as array of {name: string} from mock form
+        processedCategories = restaurantData.categories
+            .map(catNameObj => {
+                let existingCat = mockRestaurantCategoriesForAdmin.find(c => c.name.toLowerCase() === catNameObj.name.toLowerCase());
+                if (!existingCat) {
+                    existingCat = { id: nextRestaurantCategoryIdForAdmin++, name: catNameObj.name };
+                    mockRestaurantCategoriesForAdmin.push(existingCat);
+                }
+                return existingCat; // Store full category object for mock
+            });
+    }
+
+    const newRestaurant = {
+        id: nextRestaurantIdForAdmin++,
+        name: restaurantData.name,
+        address: restaurantData.address,
+        phone: restaurantData.phone || null,
+        image: restaurantData.image || null,
+        owner: restaurantData.owner || null, // owner ID
+        is_active: restaurantData.is_active !== undefined ? restaurantData.is_active : true,
+        is_approved: restaurantData.is_approved !== undefined ? restaurantData.is_approved : false,
+        categories: processedCategories,
+        owner_details: restaurantData.owner ? mockApiUsersDataForAdmin.find(u => u.id === restaurantData.owner) : null,
+        date_created: new Date().toISOString(),
+    };
+    mockApiRestaurantsDataForAdmin.push(newRestaurant);
+    return Promise.resolve(newRestaurant);
   },
   updateRestaurant: async (restaurantId, restaurantData, token) => {
     console.log("ADMIN API: Updating restaurant:", restaurantId, restaurantData);
     // REAL: return apiService.request(`/restaurants/${restaurantId}/`, { method: 'PATCH', body: JSON.stringify(restaurantData), headers: { 'Authorization': `Bearer ${token}` } });
-    // Mock:
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const resIndex = mockApiRestaurantsDataAdmin.findIndex(r => r.id === restaurantId);
-    if (resIndex === -1) throw new Error("Restaurant not found (mock).");
-    mockApiRestaurantsDataAdmin[resIndex] = { ...mockApiRestaurantsDataAdmin[resIndex], ...restaurantData, owner_details: restaurantData.owner ? mockApiUsersDataAdmin.find(u=>u.id === restaurantData.owner) : mockApiRestaurantsDataAdmin[resIndex].owner_details };
-    if (restaurantData.hasOwnProperty('owner') && restaurantData.owner === null) {
-        mockApiRestaurantsDataAdmin[resIndex].owner_details = null;
+    if (!token) return Promise.reject({ message: "Admin not authenticated." });
+    await new Promise(resolve => setTimeout(resolve, MOCK_API_DELAY_ADMIN));
+    const resIndex = mockApiRestaurantsDataForAdmin.findIndex(r => r.id === restaurantId);
+    if (resIndex === -1) return Promise.reject({ message: "Restaurant not found (mock)." });
+
+    let processedCategories;
+    if (restaurantData.categories) { // Assuming categories came as array of {name: string} from mock form
+        processedCategories = restaurantData.categories
+            .map(catNameObj => {
+                let existingCat = mockRestaurantCategoriesForAdmin.find(c => c.name.toLowerCase() === catNameObj.name.toLowerCase());
+                if (!existingCat) {
+                    existingCat = { id: nextRestaurantCategoryIdForAdmin++, name: catNameObj.name };
+                    mockRestaurantCategoriesForAdmin.push(existingCat);
+                }
+                return existingCat;
+            });
     }
-    return mockApiRestaurantsDataAdmin[resIndex];
+    
+    const updatedRestaurant = { ...mockApiRestaurantsDataForAdmin[resIndex], ...restaurantData };
+    if (restaurantData.hasOwnProperty('owner')) {
+        updatedRestaurant.owner_details = restaurantData.owner ? mockApiUsersDataForAdmin.find(u => u.id === restaurantData.owner) : null;
+    }
+    if (processedCategories !== undefined) {
+        updatedRestaurant.categories = processedCategories;
+    }
+
+    mockApiRestaurantsDataForAdmin[resIndex] = updatedRestaurant;
+    return Promise.resolve(mockApiRestaurantsDataForAdmin[resIndex]);
   },
   // deleteRestaurant: async (restaurantId, token) => { /* ... */ },
 };
