@@ -1,91 +1,197 @@
 // src/modules/restaurant/pages/ManageOrdersPage.jsx
-import React, { useState, useEffect, useCallback } from 'react'; // useContext removed
-import { Loader2, RefreshCw, Eye } from 'lucide-react';
-import { useAuth } from '../../../context/AuthContext.jsx'; // AuthContext import removed, useAuth is correct
-import { useNotification } from '../../../context/NotificationContext.jsx';
-import { restaurantApi } from '../../../api/restaurantApi.js';
-import OrderTableRow from '../components/OrderTableRow.jsx'; // Path to component
-import OrderDetailModal from '../components/OrderDetailModal.jsx'; // Path to component
+import React, { useState, useEffect, useCallback } from 'react';
+import { useOutletContext } from 'react-router-dom'; // Added
+import { restaurantApi } from '../../../api/restaurantApi';
+import { useAuth } from '../../../context/AuthContext';
+import { useNotification } from '../../../context/NotificationContext';
+import Button from '../../../components/Button';
+import HeroIcon from '../../../components/HeroIcon';
+import OrderTableRow from '../components/OrderTableRow';
+import OrderDetailModal from '../components/OrderDetailModal';
+import ConfirmationModal from '../../../components/ConfirmationModal';
 
 const ManageOrdersPage = () => {
-  const { currentRestaurant, token } = useAuth(); // This is already correct
-  const restaurantId = currentRestaurant?.id; // Get restaurantId from context
+  const { token } = useAuth(); // Only token needed
+  const { currentRestaurantId } = useOutletContext(); // Get from layout
+  const { showSuccess, showError } = useNotification();
 
   const [orders, setOrders] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const { showNotification } = useNotification();
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  
+  const [orderToConfirm, setOrderToConfirm] = useState(null);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+
+  const [activeFilter, setActiveFilter] = useState('ALL');
+  
   const fetchOrders = useCallback(async () => {
-    if (!restaurantId || !token) { 
-      setOrders([]); // Clear orders if no restaurant or token
-      setIsLoading(false); 
-      return; 
+    if (!currentRestaurantId || !token) {
+      setError("Restoranti nuk është zgjedhur ose nuk jeni të kyçur.");
+      setOrders([]); // Clear orders if no restaurant ID
+      return;
     }
-    setIsLoading(true); setError(null);
+    setIsLoading(true);
+    setError(null);
     try {
-      const fetchedOrders = await restaurantApi.fetchRestaurantOrders(restaurantId, token);
-      setOrders(fetchedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      const data = await restaurantApi.fetchRestaurantOrders(currentRestaurantId, token);
+      setOrders(data || []);
     } catch (err) {
-      setError(err.message || 'Failed to fetch orders.');
-      showNotification(err.message || 'Failed to fetch orders.', 'error');
-      setOrders([]); // Clear orders on error
-    } finally { setIsLoading(false); }
-  }, [restaurantId, token, showNotification]);
+      console.error("ManageOrders: Failed to fetch orders:", err);
+      setError(err.message || "S'u mund të ngarkoheshin porositë.");
+      showError(err.message || "S'u mund të ngarkoheshin porositë.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentRestaurantId, token, showError]);
 
   useEffect(() => {
     fetchOrders();
+    const pollInterval = setInterval(fetchOrders, 30000); // Poll every 30 seconds
+    return () => clearInterval(pollInterval);
   }, [fetchOrders]);
 
-  const handleViewUpdateOrder = (order) => { setSelectedOrder(order); setIsModalOpen(true); };
-
-  const handleUpdateStatus = async (orderId, newStatus) => {
-    if (!token) { showNotification('Authentication token is missing.', 'error'); return; }
-    try {
-      await restaurantApi.updateOrderStatus(orderId, newStatus, token);
-      showNotification(`Order ${orderId} status updated to ${newStatus}!`, 'success');
-      fetchOrders(); 
-      setIsModalOpen(false); setSelectedOrder(null);
-    } catch (err) { showNotification(err.message || 'Failed to update order status.', 'error');}
+  const handleViewDetails = (order) => {
+    setSelectedOrder(order);
+    setIsDetailModalOpen(true);
   };
 
-  if (isLoading) return <div className="p-6 flex justify-center items-center h-64"><Loader2 className="animate-spin h-8 w-8 text-blue-600" /></div>;
-  if (error && orders.length === 0) return <div className="p-6 text-red-600 bg-red-100 rounded-md">Error: {error} <button onClick={fetchOrders} className="ml-2 text-blue-600 underline">Try again</button></div>;
+  const handleUpdateStatusRequest = (orderId, newStatus) => {
+    const order = orders.find(o => o.id === orderId);
+    setOrderToConfirm({ 
+        orderId, 
+        newStatus, 
+        currentStatus: order?.status, // Pass current status for confirmation message
+        customerName: order?.user_details?.username 
+    });
+    setIsConfirmModalOpen(true);
+  };
+  
+  const confirmStatusUpdate = async () => {
+    if (!orderToConfirm || !token) return;
+    const { orderId, newStatus } = orderToConfirm;
+    setIsConfirmModalOpen(false);
+
+    setIsLoading(true); // General loading for the action
+    try {
+        const updatedOrder = await restaurantApi.updateOrderStatus(orderId, newStatus, token);
+        setOrders(prevOrders => prevOrders.map(o => o.id === orderId ? updatedOrder : o));
+        showSuccess(`Statusi i porosisë #${orderId} u përditësua.`);
+        if(isDetailModalOpen && selectedOrder?.id === orderId){
+            setSelectedOrder(updatedOrder);
+        }
+    } catch (err) {
+        console.error("Failed to update order status:", err);
+        showError(err.message || "Gabim gjatë përditësimit të statusit.");
+    } finally {
+        setOrderToConfirm(null);
+        setIsLoading(false);
+    }
+  };
+
+  const orderStatusFilters = [
+    { label: "Të gjitha Aktive", value: "ACTIVE_ONES" }, // Custom filter value
+    { label: "Në Pritje", value: "PENDING" },
+    { label: "Konfirmuar", value: "CONFIRMED" },
+    { label: "Në Përgatitje", value: "PREPARING" },
+    { label: "Gati për Marrje", value: "READY_FOR_PICKUP" },
+    { label: "Të gjitha", value: "ALL_HISTORY" }, // To see delivered/cancelled
+    { label: "Dërguar", value: "DELIVERED" },
+    { label: "Anuluar", value: "CANCELLED" },
+  ];
+
+  const filteredOrders = orders.filter(order => {
+    if (activeFilter === 'ALL_HISTORY') return true;
+    if (activeFilter === 'ACTIVE_ONES') return ['PENDING', 'CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP', 'ON_THE_WAY'].includes(order.status?.toUpperCase());
+    if (activeFilter === 'CANCELLED') return order.status?.startsWith('CANCELLED');
+    return order.status === activeFilter;
+  }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-gray-800">Manage Orders</h1>
-        <button onClick={fetchOrders} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm flex items-center disabled:opacity-50" disabled={isLoading}>
-          {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <RefreshCw className="w-4 h-4 mr-2"/>} Refresh Orders
-        </button>
+    <div className="container mx-auto">
+      <div className="mb-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white">Menaxho Porositë</h1>
+        <Button variant="outline" onClick={fetchOrders} isLoading={isLoading} disabled={isLoading}
+                iconLeft={<HeroIcon icon="ArrowPathIcon" className={`h-4 w-4 ${isLoading ? 'animate-spin': ''}`}/>}>
+          Rifresko
+        </Button>
       </div>
-      {orders.length === 0 && !isLoading && !error ? ( // Added !error here
-        <div className="bg-white shadow-lg rounded-xl p-6 text-center text-gray-500">No orders found for this restaurant.</div>
-      ) : error && orders.length === 0 ? null : ( // Don't show table if error and no orders
-        <div className="bg-white shadow-lg rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left text-gray-500">
-              <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3">Order ID</th>
-                  <th scope="col" className="px-6 py-3">Customer</th>
-                  <th scope="col" className="px-6 py-3">Date</th>
-                  <th scope="col" className="px-6 py-3">Total</th>
-                  <th scope="col" className="px-6 py-3">Status</th>
-                  <th scope="col" className="px-6 py-3 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map(order => ( <OrderTableRow key={order.id} order={order} onViewUpdate={handleViewUpdateOrder} /> ))}
-              </tbody>
-            </table>
-          </div>
+
+      <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Filtro:</span>
+          {orderStatusFilters.map(filter => (
+            <Button
+              key={filter.value}
+              variant={activeFilter === filter.value ? 'primary' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveFilter(filter.value)}
+              className="whitespace-nowrap"
+            >
+              {filter.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading && filteredOrders.length === 0 && (
+        <div className="flex justify-center items-center py-10"><div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-primary-500"></div></div>
+      )}
+      
+      {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 dark:bg-red-700/20 dark:text-red-300 p-4 rounded-md" role="alert"><p className="font-bold">Gabim:</p><p>{error}</p></div>}
+
+      {!isLoading && !error && (
+        <div className="bg-white dark:bg-gray-800 shadow-xl rounded-lg overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-700">
+              <tr>
+                {['ID', 'Klienti', 'Data', 'Artikuj', 'Totali', 'Statusi', 'Veprime'].map(header => (
+                  <th key={header} scope="col" className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+              {filteredOrders.length > 0 ? (
+                filteredOrders.map((order) => (
+                  <OrderTableRow 
+                    key={order.id} 
+                    order={order} 
+                    onViewDetails={handleViewDetails}
+                    // onUpdateStatus is now handled by OrderDetailModal or other specific UIs
+                  />
+                ))
+              ) : (
+                <tr><td colSpan="7" className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">{orders.length === 0 ? "Nuk ka porosi." : `Nuk ka porosi me filtrin "${activeFilter}".`}</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
-      {isModalOpen && selectedOrder && ( <OrderDetailModal order={selectedOrder} onClose={() => setIsModalOpen(false)} onUpdateStatus={handleUpdateStatus} /> )}
+
+      {selectedOrder && (
+        <OrderDetailModal
+          isOpen={isDetailModalOpen}
+          onClose={() => setIsDetailModalOpen(false)}
+          order={selectedOrder}
+          onUpdateStatus={handleUpdateStatusRequest} // This will trigger confirmation
+        />
+      )}
+      {isConfirmModalOpen && orderToConfirm && ( // Ensure orderToConfirm is not null
+        <ConfirmationModal
+            isOpen={isConfirmModalOpen}
+            onClose={() => setIsConfirmModalOpen(false)}
+            onConfirm={confirmStatusUpdate}
+            title="Konfirmo Ndryshimin e Statusit"
+            message={`Jeni të sigurt që doni të ndryshoni statusin e porosisë #${orderToConfirm.orderId} (${orderToConfirm.customerName || ''}) nga "${orderToConfirm.currentStatus?.replace(/_/g, ' ')?.toLowerCase() || 'i tanishëm'}" në "${orderToConfirm.newStatus.replace(/_/g, ' ').toLowerCase()}"?`}
+            confirmText="Po, Ndrysho"
+            iconType="warning"
+            isLoading={isLoading} // Use general loading state
+        />
+      )}
     </div>
   );
 };

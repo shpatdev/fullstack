@@ -1,6 +1,6 @@
 // src/routes/AppRoutes.jsx
-import React from 'react';
-import { Routes, Route, Link as RouterLink } from 'react-router-dom';
+import React, { Suspense } from 'react';
+import { BrowserRouter, Routes, Route, Link as RouterLink, Navigate } from 'react-router-dom'; // Sigurohu që BrowserRouter është vetëm këtu ose te main.jsx
 
 // --- Layouts ---
 import AuthLayout from '../layouts/AuthLayout.jsx';
@@ -15,6 +15,7 @@ import ProtectedRoute from '../components/ProtectedRoute.jsx';
 // --- Auth Pages ---
 import LoginPage from '../modules/auth/pages/Login.jsx';
 import RegisterPage from '../modules/auth/pages/Register.jsx';
+import AdminLoginPage from '../modules/auth/pages/AdminLoginPage.jsx';
 
 // --- Customer Pages ---
 import RestaurantListPage from '../modules/customer/pages/RestaurantListPage.jsx';
@@ -25,87 +26,103 @@ import CheckoutPage from '../modules/customer/pages/CheckoutPage.jsx';
 import OrderConfirmationPage from '../modules/customer/pages/OrderConfirmationPage.jsx';
 import MyOrdersPage from '../modules/customer/pages/MyOrdersPage.jsx';
 
-// --- Restaurant Owner Pages ---
-import RO_OverviewPage from '../modules/restaurant/pages/Overview.jsx';
-import RO_ManageOrdersPage from '../modules/restaurant/pages/ManageOrdersPage.jsx';
-import RO_MenuManagementPage from '../modules/restaurant/pages/MenuManagementPage.jsx';
-import RO_RestaurantSettingsPage from '../modules/restaurant/pages/RestaurantSettingsPage.jsx';
-// import RO_CustomerReviewsPage from '../modules/restaurant/pages/CustomerReviewsPage.jsx'; // If you have these
-// import RO_AnalyticsPage from '../modules/restaurant/pages/AnalyticsPage.jsx';       // If you have these
-
 // --- Courier/Driver Pages ---
 import DriverDashboardPage from '../modules/courier/pages/DriverDashboardPage.jsx';
+// Faqet e Admin dhe Restaurant Owner NUK importohen më direkt këtu,
+// ato do të renderizohen nga AdminRoutes dhe RestaurantOwnerRoutes
 
-// --- Admin Pages ---
-import AdminOverviewPage from '../modules/admin/pages/AdminOverviewPage.jsx';
-import AdminManageUsersPage from '../modules/admin/pages/ManageUsersPage.jsx';
-import AdminManageRestaurantsPage from '../modules/admin/pages/ManageRestaurantsPage.jsx';
-import AdminOrdersPage from '../modules/admin/pages/AdminOrdersPage.jsx';       // If you have this
-import AdminSettingsPage from '../modules/admin/pages/AdminSettingsPage.jsx'; // If you have this
+// --- Import Arrays of Routes from Modules ---
+import AdminRoutesArray from '../modules/admin/routes.jsx'; // Emërtoje ndryshe për qartësi
+import RestaurantOwnerRoutesArray from '../modules/restaurant/routes.jsx'; // Emërtoje ndryshe
 
+// Fallback loading component
+const LoadingFallback = () => (
+  <div className="flex justify-center items-center h-screen w-screen bg-gray-100 dark:bg-gray-900">
+    <div className="animate-spin rounded-full h-20 w-20 border-t-4 border-b-4 border-primary-500"></div>
+    <p className="ml-4 text-lg text-gray-700 dark:text-gray-300">Duke ngarkuar...</p>
+  </div>
+);
 
 // Fallback Page (404)
 const NotFoundPage = () => (
-    <div className="min-h-screen flex flex-col items-center justify-center text-center p-4 bg-gray-100">
-        <h1 className="text-6xl font-bold text-red-500 mb-4">404</h1>
-        <p className="text-2xl text-gray-700 mb-2">Oops! Page Not Found.</p>
-        <p className="text-gray-500 mb-6">The page you are looking for might have been removed or is temporarily unavailable.</p>
-        <RouterLink to="/" className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors">
-            Go to Homepage
+    <div className="min-h-screen flex flex-col items-center justify-center text-center p-4 bg-gray-100 dark:bg-gray-900">
+        <h1 className="text-6xl font-bold text-primary-500 dark:text-primary-400 mb-4">404</h1>
+        <p className="text-2xl text-gray-700 dark:text-gray-300 mb-2">Oops! Faqja Nuk u Gjet.</p>
+        <p className="text-gray-500 dark:text-gray-400 mb-6">Faqja që po kërkoni mund të jetë hequr ose është përkohësisht e padisponueshme.</p>
+        <RouterLink to="/" className="px-6 py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-colors">
+            Kthehu te Faqja Kryesore
         </RouterLink>
     </div>
 );
 
 const AppRoutes = () => {
   return (
-    <Routes>
-      {/* --- Authentication Routes --- */}
-      <Route element={<AuthLayout />}>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-      </Route>
+    // <BrowserRouter> {/* SIGUROHU QË BrowserRouter është vetëm NJË HERË, idealisht te main.jsx */}
+      <Suspense fallback={<LoadingFallback />}>
+        <Routes>
+          {/* --- Authentication Routes --- */}
+          <Route element={<AuthLayout />}>
+            <Route path="/auth/login" element={<LoginPage />} />
+            <Route path="/auth/register" element={<RegisterPage />} />
+            <Route path="/auth/admin-login" element={<AdminLoginPage />} />
+          </Route>
 
-      {/* --- Customer Routes --- */}
-      <Route path="/" element={<CustomerLayout />}>
-        <Route index element={<RestaurantListPage />} />
-        <Route path="home" element={<RestaurantListPage />} />
-        <Route path="restaurants/:restaurantId" element={<RestaurantDetailPage />} />
-        <Route path="cart" element={ <ProtectedRoute allowedRoles={['CUSTOMER']}> <CartPage /> </ProtectedRoute> }/>
-        <Route path="checkout" element={ <ProtectedRoute allowedRoles={['CUSTOMER']}> <CheckoutPage /> </ProtectedRoute> }/>
-        <Route path="order-confirmation/:orderId" element={ <ProtectedRoute allowedRoles={['CUSTOMER']}> <OrderConfirmationPage /> </ProtectedRoute> }/>
-        <Route path="my-orders" element={ <ProtectedRoute allowedRoles={['CUSTOMER']}> <MyOrdersPage /> </ProtectedRoute> }/>
-        <Route path="profile" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'RESTAURANT_OWNER', 'DRIVER', 'ADMIN']}> <ProfilePage /> </ProtectedRoute> }/>
-      </Route>
+          {/* --- Customer Routes --- */}
+          <Route path="/customer" element={<CustomerLayout />}>
+            <Route index element={<RestaurantListPage />} />
+            <Route path="restaurants" element={<RestaurantListPage />} />
+            <Route path="restaurants/:restaurantId" element={<RestaurantDetailPage />} />
+            <Route path="cart" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}> <CartPage /> </ProtectedRoute> }/>
+            <Route path="checkout" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}> <CheckoutPage /> </ProtectedRoute> }/>
+            <Route path="order-confirmation/:orderId" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}> <OrderConfirmationPage /> </ProtectedRoute> }/>
+            <Route path="my-orders" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}> <MyOrdersPage /> </ProtectedRoute> }/>
+            <Route path="profile" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'RESTAURANT_OWNER', 'DRIVER', 'ADMIN']}> <ProfilePage /> </ProtectedRoute> }/>
+          </Route>
 
-      {/* --- Restaurant Owner Routes --- */}
-      <Route path="/restaurant" element={ <ProtectedRoute allowedRoles={['RESTAURANT_OWNER', 'ADMIN']}> <RestaurantOwnerLayout /> </ProtectedRoute> } >
-        <Route index element={<RO_OverviewPage />} />
-        <Route path="dashboard" element={<RO_OverviewPage />} />
-        <Route path="orders" element={<RO_ManageOrdersPage />} />
-        <Route path="menu" element={<RO_MenuManagementPage />} />
-        <Route path="settings" element={<RO_RestaurantSettingsPage />} />
-        {/* <Route path="reviews" element={<RO_CustomerReviewsPage />} /> */}
-        {/* <Route path="analytics" element={<RO_AnalyticsPage />} /> */}
-      </Route>
+          {/* --- Restaurant Owner Routes --- */}
+          <Route 
+            path="/restaurant/*" 
+            element={ 
+              <ProtectedRoute allowedRoles={['RESTAURANT_OWNER', 'ADMIN']}> 
+                <RestaurantOwnerLayout /> 
+              </ProtectedRoute> 
+            }
+          >
+            {/* Render each Route from the array */}
+            {RestaurantOwnerRoutesArray} 
+          </Route>
 
-      {/* --- Courier/Driver Routes --- */}
-      <Route path="/driver" element={ <ProtectedRoute allowedRoles={['DRIVER', 'ADMIN']}> <DriverLayout /> </ProtectedRoute> } >
-        <Route index element={<DriverDashboardPage />} />
-        <Route path="dashboard" element={<DriverDashboardPage />} />
-      </Route>
+          {/* --- Courier/Driver Routes --- */}
+          <Route 
+            path="/driver/*" 
+            element={ 
+              <ProtectedRoute allowedRoles={['DRIVER', 'DELIVERY_PERSONNEL', 'ADMIN']}> 
+                <DriverLayout /> 
+              </ProtectedRoute> 
+            } 
+          >
+            <Route index element={<DriverDashboardPage />} />
+            <Route path="dashboard" element={<DriverDashboardPage />} />
+          </Route>
 
-      {/* --- Admin Routes --- */}
-      <Route path="/admin" element={ <ProtectedRoute allowedRoles={['ADMIN']}> <AdminLayout /> </ProtectedRoute> } >
-        <Route index element={<AdminOverviewPage />} />
-        <Route path="dashboard" element={<AdminOverviewPage />} />
-        <Route path="users" element={<AdminManageUsersPage />} />
-        <Route path="restaurants" element={<AdminManageRestaurantsPage />} />
-        <Route path="orders" element={<AdminOrdersPage />} /> {/* Uncomment if AdminOrdersPage.jsx exists and is correct */}
-        <Route path="settings" element={<AdminSettingsPage />} /> {/* Uncomment if AdminSettingsPage.jsx exists and is correct */}
-      </Route>
+          {/* --- Admin Routes --- */}
+          <Route 
+            path="/admin/*" 
+            element={ 
+              <ProtectedRoute allowedRoles={['ADMIN']}> 
+                <AdminLayout /> 
+              </ProtectedRoute> 
+            }
+          >
+            {/* Render each Route from the array */}
+            {AdminRoutesArray}
+          </Route>
 
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+          <Route path="/" element={<Navigate to="/customer/restaurants" replace />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </Suspense>
+    // </BrowserRouter> {/* SIGUROHU QË BrowserRouter është vetëm NJË HERË */}
   );
 };
 export default AppRoutes;

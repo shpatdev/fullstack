@@ -1,53 +1,123 @@
 // src/layouts/RestaurantOwnerLayout.jsx
-import React, { useState } from 'react';
-import { Outlet, useNavigate, Navigate } from 'react-router-dom'; 
-import Sidebar from '../modules/restaurant/components/Sidebar.jsx'; // Assuming Sidebar is moved
-import { useAuth } from '../context/AuthContext.jsx'; // Changed import
-import { useNotification } from '../context/NotificationContext.jsx'; // Assuming global
+import React, { useState, useEffect } from 'react';
+import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom'; // Added useNavigate
+import { useAuth } from '../context/AuthContext';
+import Sidebar from '../modules/restaurant/components/Sidebar';
+import HeroIcon from '../components/HeroIcon';
+import Button from '../components/Button';
 
 const RestaurantOwnerLayout = () => {
-  const [activeSection, setActiveSection] = useState('overview'); // Managed by router now
-  const { currentRestaurant, user, logout } = useAuth(); // Changed usage
-  const { showNotification } = useNotification();
-  const navigate = useNavigate();
-
-  const handleLogout = async () => {
-    try {
-      await logout(); // From AuthContext
-      showNotification('Logged out successfully.', 'info');
-      navigate('/login'); // Or appropriate login page for owners
-    } catch (error) {
-      showNotification('Logout failed.', 'error');
-    }
-  };
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate(); // For logout
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
-  // activeSection will be determined by the matched route, not local state here.
-  // Sidebar might need to know the current path to highlight active link.
+  // Determine current restaurant from user context
+  const ownedRestaurants = user?.ownsRestaurants || [];
+  // For this project, let's assume the first restaurant is the active one.
+  // A real app might have a selector if a user owns multiple restaurants.
+  const currentRestaurant = ownedRestaurants.length > 0 ? ownedRestaurants[0] : null;
 
-  if (!user || (user.role !== "RESTAURANT_OWNER" && user.role !== "ADMIN")) { // Role check
-    return <Navigate to="/login" replace />;
+  useEffect(() => {
+    // If user becomes authenticated and is a restaurant owner but has no restaurant assigned (edge case)
+    // or if currentRestaurant becomes null after being set.
+    if (isAuthenticated && user?.role === 'RESTAURANT_OWNER' && !currentRestaurant && !isLoading) {
+      // This case should ideally be handled during login/registration (admin assigns restaurant)
+      // Or redirect to a page explaining the issue / contact support.
+      console.warn("RestaurantOwnerLayout: No restaurant associated with this owner. Redirecting...");
+      // navigate('/some-error-page-for-owner'); // Or to a setup page
+    }
+  }, [currentRestaurant, isAuthenticated, user?.role, isLoading, navigate]);
+
+
+  if (isLoading) {
+    return (
+        <div className="flex justify-center items-center h-screen bg-gray-100 dark:bg-gray-900">
+            <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-primary-500"></div>
+            <p className="ml-4 text-lg text-gray-700 dark:text-gray-300">Duke ngarkuar...</p>
+        </div>
+    );
   }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/auth/login" state={{ from: location }} replace />;
+  }
+
+  if (user?.role !== 'RESTAURANT_OWNER') {
+    // Redirect non-owners
+    console.warn(`RestaurantOwnerLayout: User with role "${user?.role}" attempted to access. Redirecting.`);
+    return <Navigate to="/" replace />;
+  }
+  
   if (!currentRestaurant) {
-    return <div className="p-10 text-center flex flex-col items-center justify-center min-h-screen">
-        <p className="text-xl text-gray-700">No restaurant selected or assigned.</p>
-        <p className="text-sm text-gray-500 mt-2">Please contact support or select a restaurant if you own multiple.</p>
-        {/* Potentially add a restaurant selection component here if user.ownsRestaurants > 0 */}
-         <button onClick={handleLogout} className="mt-4 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">Logout</button>
-        </div>;
+    // If still no current restaurant after loading and checks (e.g., not assigned by admin yet)
+    return (
+        <div className="flex flex-col justify-center items-center h-screen bg-gray-100 dark:bg-gray-900 p-8 text-center">
+            <HeroIcon icon="ExclamationTriangleIcon" className="h-16 w-16 text-yellow-500 mb-4"/>
+            <h1 className="text-2xl font-semibold text-gray-800 dark:text-white mb-2">Restoranti Nuk u Gjet</h1>
+            <p className="text-gray-600 dark:text-gray-400">
+                Duket se nuk keni një restorant të caktuar në llogarinë tuaj. <br/>
+                Ju lutem kontaktoni administratorin e platformës.
+            </p>
+            <Button onClick={logout} variant="primary" className="mt-6">
+                Dilni
+            </Button>
+        </div>
+    );
   }
 
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
+    <div className="flex h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
       <Sidebar 
-        // Pass necessary props to Sidebar, e.g., to highlight active route
-        // activeSection={activeSection} // This will be derived from router location
-        // setActiveSection={setActiveSection} // Navigation handled by <Link> in Sidebar
+        isSidebarOpen={isSidebarOpen} 
+        setIsSidebarOpen={setIsSidebarOpen} 
+        restaurantName={currentRestaurant.name} 
+        restaurantId={currentRestaurant.id}
       />
-      <main className="flex-1 overflow-y-auto">
-        {/* Top bar inside main content could go here if needed */}
-        <Outlet context={{ restaurantId: currentRestaurant.id }} /> {/* Pass restaurantId via Outlet context */}
-      </main>
+
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <header className="bg-white dark:bg-gray-800 shadow-sm print:hidden">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+              <div className="flex items-center">
+                <button
+                  onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                  className="md:hidden text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500 mr-3"
+                  aria-label="Hap menunë anësore"
+                >
+                  <HeroIcon icon="Bars3Icon" className="h-6 w-6" />
+                </button>
+                <div className="text-lg font-semibold text-gray-800 dark:text-white hidden md:block truncate" title={currentRestaurant.name}>
+                  Paneli: {currentRestaurant.name}
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                 {/* Placeholder for notifications or quick actions */}
+                <button className="relative text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" aria-label="Njoftimet e Restorantit">
+                    <HeroIcon icon="BellIcon" className="h-6 w-6" />
+                    {/* <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-gray-800"></span> Example notification dot */}
+                </button>
+                <Button 
+                  onClick={logout}
+                  variant="ghost"
+                  size="sm"
+                  className="text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  iconLeft={<HeroIcon icon="ArrowRightOnRectangleIcon" className="h-5 w-5"/>}
+                >
+                  <span className="hidden sm:inline">Dilni</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 dark:bg-gray-900 p-4 sm:p-6">
+          {/* Pass currentRestaurantId to all child routes via Outlet context */}
+          <Outlet context={{ currentRestaurantId: currentRestaurant.id, currentRestaurantName: currentRestaurant.name }} />
+        </main>
+      </div>
     </div>
   );
 };

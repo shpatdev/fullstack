@@ -1,28 +1,20 @@
 // src/App.jsx
 import React from 'react';
-import { BrowserRouter } from 'react-router-dom';
-import AppRoutes from './routes/AppRoutes.jsx';
-import { AuthProvider } from './context/AuthContext.jsx';
-import { CartProvider } from './context/CartContext.jsx';
-import { TaskProvider } from './context/TaskContext.jsx';
-import { NotificationProvider } from './context/NotificationContext.jsx';
+import { AuthProvider } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext';
+import { CartProvider } from './context/CartContext';
+import AppRoutes from './routes/AppRoutes'; // AppRoutes NUK duhet të ketë Router brenda
+import './App.css';
 
 function App() {
   return (
-    <BrowserRouter>
-      <NotificationProvider>
-        <AuthProvider>
-          {/* CartProvider and TaskProvider might be better placed around specific layouts
-              if they are strictly for those roles, but global is fine for now if their
-              internal logic handles role-specific data/behavior correctly. */}
-          <CartProvider>
-            <TaskProvider>
-              <AppRoutes />
-            </TaskProvider>
-          </CartProvider>
-        </AuthProvider>
-      </NotificationProvider>
-    </BrowserRouter>
+    <NotificationProvider>
+      <AuthProvider>
+        <CartProvider>
+          <AppRoutes /> {/* AppRoutes thjesht kthen Routes */}
+        </CartProvider>
+      </AuthProvider>
+    </NotificationProvider>
   );
 }
 export default App;

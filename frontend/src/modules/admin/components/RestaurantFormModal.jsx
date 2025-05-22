@@ -1,50 +1,80 @@
 // src/modules/admin/components/RestaurantFormModal.jsx
-import React, { useState, useEffect } from 'react';
-import ModalShell from '../../../components/ModalShell.jsx';
-import Button from '../../../components/Button.jsx';
+import React, { useState, useEffect, useCallback } from 'react';
+import ModalShell from '../../../components/ModalShell';
+import Button from '../../../components/Button';
+import { adminApi } from '../../../api/adminApi';
+import { useAuth } from '../../../context/AuthContext';
+import { useNotification } from '../../../context/NotificationContext';
+import HeroIcon from '../../../components/HeroIcon';
 
-const RestaurantFormModal = ({ isOpen, onClose, onSave, restaurantToEdit, potentialOwners, isLoading }) => {
-  const [formData, setFormData] = useState({
+const RestaurantFormModal = ({ isOpen, onClose, restaurant, onSave }) => {
+  const { user } = useAuth();
+  const { showSuccess, showError } = useNotification();
+  
+  const initialFormData = {
     name: '',
     address: '',
-    city: '',
-    postal_code: '',
-    phone_number: '',
-    description: '',
+    phone: '',
     owner: '', // Will store owner ID
-    // category_ids: [], // For multi-select categories if you implement that
-    image: null, // For file upload
     is_active: true,
-    is_approved: false, // Default for new restaurants might be pending/false
-  });
-  const [previewImage, setPreviewImage] = useState(null);
-  const [error, setError] = useState('');
+    is_approved: false,
+    image: null, // For file object
+    image_url: '', // For displaying existing or new image preview
+    categories_text: '', // Comma-separated category names for input
+    // category_ids: [], // If backend expects array of IDs directly
+    description: '', // Added description field
+  };
+
+  const [formData, setFormData] = useState(initialFormData);
+  const [potentialOwners, setPotentialOwners] = useState([]);
+  const [allGlobalCategories, setAllGlobalCategories] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [imagePreview, setImagePreview] = useState('');
+
+
+  const fetchModalData = useCallback(async () => {
+    if (!user?.token || !isOpen) return;
+    setIsLoading(true);
+    try {
+      const [ownersData, categoriesData] = await Promise.all([
+        adminApi.fetchPotentialOwners(user.token), // Ensure this API is robust
+        adminApi.fetchAllRestaurantCategories(user.token) // Ensure this API returns global categories
+      ]);
+      setPotentialOwners(ownersData || []);
+      setAllGlobalCategories(categoriesData || []);
+    } catch (error) {
+      console.error("Failed to fetch modal data for restaurant form", error);
+      showError(error.message || "S'u mund të ngarkoheshin të dhënat e formularit.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.token, isOpen, showError]);
 
   useEffect(() => {
-    if (restaurantToEdit) {
-      setFormData({
-        name: restaurantToEdit.name || '',
-        address: restaurantToEdit.address || '',
-        city: restaurantToEdit.city || '',
-        postal_code: restaurantToEdit.postal_code || '',
-        phone_number: restaurantToEdit.phone_number || '',
-        description: restaurantToEdit.description || '',
-        owner: restaurantToEdit.owner || (restaurantToEdit.owner_details?.id || ''),
-        // category_ids: restaurantToEdit.categories?.map(cat => cat.id) || [],
-        image: null, // Don't pre-fill file input, but show current image
-        is_active: restaurantToEdit.is_active !== undefined ? restaurantToEdit.is_active : true,
-        is_approved: restaurantToEdit.is_approved !== undefined ? restaurantToEdit.is_approved : false,
-      });
-      setPreviewImage(restaurantToEdit.image_url || restaurantToEdit.image || null); // Assuming image_url from serializer
-    } else {
-      setFormData({
-        name: '', address: '', city: '', postal_code: '', phone_number: '', description: '', owner: '',
-        image: null, is_active: true, is_approved: false,
-      });
-      setPreviewImage(null);
+    if (isOpen) {
+      fetchModalData();
+      if (restaurant) {
+        setFormData({
+          name: restaurant.name || '',
+          address: restaurant.address || '',
+          phone: restaurant.phone || '',
+          owner: restaurant.owner || '',
+          is_active: restaurant.is_active !== undefined ? restaurant.is_active : true,
+          is_approved: restaurant.is_approved !== undefined ? restaurant.is_approved : false,
+          image: null,
+          image_url: restaurant.image || '', // Keep existing image URL for display
+          categories_text: restaurant.categories ? restaurant.categories.map(c => c.name).join(', ') : '',
+          description: restaurant.description || '',
+        });
+        setImagePreview(restaurant.image || '');
+      } else {
+        setFormData(initialFormData);
+        setImagePreview('');
+      }
+      setErrors({});
     }
-    setError('');
-  }, [restaurantToEdit, isOpen]);
+  }, [restaurant, isOpen, fetchModalData]);
 
   const handleChange = (e) => {
     const { name, value, type, checked, files } = e.target;
@@ -52,129 +82,179 @@ const RestaurantFormModal = ({ isOpen, onClose, onSave, restaurantToEdit, potent
       setFormData(prev => ({ ...prev, [name]: checked }));
     } else if (type === 'file') {
       const file = files[0];
-      setFormData(prev => ({ ...prev, [name]: file || null }));
       if (file) {
-        setPreviewImage(URL.createObjectURL(file));
-      } else {
-        // Revert to original image if file selection is cleared, only if editing
-        setPreviewImage(restaurantToEdit?.image_url || restaurantToEdit?.image || null);
+        setFormData(prev => ({ ...prev, image: file }));
+        setImagePreview(URL.createObjectURL(file));
       }
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
+    if (errors[name]) setErrors(prev => ({ ...prev, [name]: null }));
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+    if (!formData.name.trim()) newErrors.name = "Emri i restorantit është i detyrueshëm.";
+    if (!formData.address.trim()) newErrors.address = "Adresa është e detyrueshme.";
+    if (!formData.phone.trim()) newErrors.phone = "Telefoni është i detyrueshëm.";
+    else if (!/^[0-9\s+\-()]{7,15}$/.test(formData.phone)) newErrors.phone = "Formati i telefonit invalid.";
+    if (!formData.categories_text.trim()) newErrors.categories_text = "Duhet të specifikoni të paktën një kategori.";
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    if (!formData.name || !formData.address || !formData.city || !formData.owner) {
-      setError("Name, Address, City, and Owner are required.");
-      return;
+    if (!validateForm()) return;
+    setIsLoading(true);
+    
+    // For a real API, you'd use FormData for file uploads.
+    // The mock API `adminApi.js` expects a JSON-like object and handles image as a string.
+    // We will prepare a payload suitable for the mock API.
+    const payload = {
+      name: formData.name,
+      address: formData.address,
+      phone: formData.phone,
+      owner: formData.owner ? parseInt(formData.owner) : null,
+      is_active: formData.is_active,
+      is_approved: formData.is_approved,
+      categories_text: formData.categories_text, // Mock API will parse this
+      description: formData.description,
+    };
+
+    if (formData.image) {
+      // For mock: if a new image is selected, use a placeholder. A real API would handle the file.
+      payload.image = `https://placehold.co/100x100/E81123/white?text=${formData.name.substring(0,3)}`;
+    } else if (restaurant?.image) {
+      // If no new image, but an old one exists, keep it (mock behavior)
+      payload.image = restaurant.image;
     }
 
-    const dataToSubmit = new FormData();
-    Object.keys(formData).forEach(key => {
-        if (key === 'image') {
-            if (formData.image instanceof File) { // Only append if it's a new file
-                dataToSubmit.append(key, formData.image, formData.image.name);
-            }
-            // If formData.image is null (meaning user cleared selection or didn't pick one while editing),
-            // we don't append it. The backend PATCH should ideally not clear the image if not provided.
-            // If it's a new restaurant and image is null, that's fine.
-        } else if (formData[key] !== null && formData[key] !== undefined) {
-            if (typeof formData[key] === 'boolean') {
-                 dataToSubmit.append(key, formData[key] ? 'true' : 'false');
-            } else {
-                dataToSubmit.append(key, formData[key]);
-            }
-        }
-    });
 
     try {
-      await onSave(dataToSubmit);
-    } catch (err) {
-      setError(err.message || "Failed to save restaurant. Please try again.");
+      let savedRestaurant;
+      if (restaurant?.id) {
+        savedRestaurant = await adminApi.updateRestaurant(restaurant.id, payload, user.token);
+        showSuccess("Restoranti u përditësua me sukses!");
+      } else {
+        savedRestaurant = await adminApi.createRestaurant(payload, user.token);
+        showSuccess("Restoranti u shtua me sukses!");
+      }
+      onSave(savedRestaurant);
+      onClose();
+    } catch (error) {
+      console.error("Failed to save restaurant", error);
+      const errMsg = error.response?.data?.detail || error.message || "Gabim gjatë ruajtjes.";
+      showError(errMsg);
+      if(error.response?.data?.errors) setErrors(error.response.data.errors);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const modalTitle = restaurantToEdit ? "Edit Restaurant" : "Create New Restaurant";
+  if (!isOpen) return null;
 
   return (
-    <ModalShell isOpen={isOpen} onClose={onClose} title={modalTitle} size="2xl">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <p className="text-red-500 text-sm bg-red-50 p-2 rounded-md">{error}</p>}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700">Restaurant Name</label>
-            <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required
-                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
-          </div>
-          <div>
-            <label htmlFor="owner" className="block text-sm font-medium text-gray-700">Owner</label>
-            <select name="owner" id="owner" value={formData.owner} onChange={handleChange} required
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm bg-white">
-              <option value="">Select an Owner</option>
-              {potentialOwners && potentialOwners.map(owner => (
-                <option key={owner.id} value={owner.id}>{owner.username} (ID: {owner.id})</option>
-              ))}
-            </select>
-          </div>
+    <ModalShell isOpen={isOpen} onClose={onClose} title={restaurant ? "Modifiko Restorantin" : "Shto Restorant të Ri"} className="max-w-2xl">
+      <form onSubmit={handleSubmit} className="space-y-5 p-1">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+            <div>
+                <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Emri i Restorantit</label>
+                <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required
+                        className={`input-form ${errors.name ? 'input-form-error' : ''}`}/>
+                {errors.name && <p className="input-error-message">{errors.name}</p>}
+            </div>
+            <div>
+                <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Telefoni</label>
+                <input type="tel" name="phone" id="phone" value={formData.phone} onChange={handleChange}
+                        className={`input-form ${errors.phone ? 'input-form-error' : ''}`}/>
+                {errors.phone && <p className="input-error-message">{errors.phone}</p>}
+            </div>
         </div>
 
         <div>
-          <label htmlFor="address" className="block text-sm font-medium text-gray-700">Street Address</label>
+          <label htmlFor="address" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Adresa e Plotë</label>
           <input type="text" name="address" id="address" value={formData.address} onChange={handleChange} required
-                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="city" className="block text-sm font-medium text-gray-700">City</label>
-            <input type="text" name="city" id="city" value={formData.city} onChange={handleChange} required
-                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
-          </div>
-          <div>
-            <label htmlFor="postal_code" className="block text-sm font-medium text-gray-700">Postal Code</label>
-            <input type="text" name="postal_code" id="postal_code" value={formData.postal_code} onChange={handleChange}
-                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
-          </div>
-        </div>
-        <div>
-          <label htmlFor="phone_number" className="block text-sm font-medium text-gray-700">Phone Number</label>
-          <input type="tel" name="phone_number" id="phone_number" value={formData.phone_number} onChange={handleChange}
-                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
-        </div>
-        <div>
-          <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
-          <textarea name="description" id="description" value={formData.description} onChange={handleChange} rows="3"
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"></textarea>
+                 className={`input-form ${errors.address ? 'input-form-error' : ''}`}/>
+          {errors.address && <p className="input-error-message">{errors.address}</p>}
         </div>
 
         <div>
-            <label htmlFor="image" className="block text-sm font-medium text-gray-700">Restaurant Image</label>
-            <input type="file" name="image" id="image" onChange={handleChange} accept="image/*"
-                    className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/>
-            {previewImage && <img src={previewImage} alt="Preview" className="mt-2 h-32 w-auto object-cover rounded"/>}
+            <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Përshkrimi (Opsional)</label>
+            <textarea name="description" id="description" value={formData.description} onChange={handleChange} rows="3"
+                        className="input-form"></textarea>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+            <div>
+            <label htmlFor="owner" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Pronari (Opsional)</label>
+            <select name="owner" id="owner" value={formData.owner} onChange={handleChange}
+                    className="input-form">
+                <option value="">Zgjidh Pronarin</option>
+                {potentialOwners.map(owner => (
+                <option key={owner.id} value={owner.id}>{owner.username} ({owner.email})</option>
+                ))}
+            </select>
+            </div>
+            <div>
+                <label htmlFor="categories_text" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Kategoritë (ndani me presje)
+                </label>
+                <input type="text" name="categories_text" id="categories_text" value={formData.categories_text} onChange={handleChange} required
+                        placeholder="P.sh. Italiane, Pica, Ushqim i Shpejtë"
+                        className={`input-form ${errors.categories_text ? 'input-form-error' : ''}`}/>
+                {errors.categories_text && <p className="input-error-message">{errors.categories_text}</p>}
+                {allGlobalCategories.length > 0 && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Sugjerime: {allGlobalCategories.slice(0,5).map(c => c.name).join(', ')}{allGlobalCategories.length > 5 ? '...' : ''}
+                    </p>
+                )}
+            </div>
         </div>
 
-        <div className="space-y-2 pt-2">
+
+        <div className="flex items-center space-x-6 pt-2">
             <div className="flex items-center">
                 <input id="is_active" name="is_active" type="checkbox" checked={formData.is_active} onChange={handleChange}
-                        className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"/>
-                <label htmlFor="is_active" className="ml-2 block text-sm text-gray-900">Restaurant is Active</label>
+                    className="h-4 w-4 text-primary-600 border-gray-300 dark:border-gray-500 rounded focus:ring-primary-500"/>
+                <label htmlFor="is_active" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">Aktiv</label>
             </div>
             <div className="flex items-center">
                 <input id="is_approved" name="is_approved" type="checkbox" checked={formData.is_approved} onChange={handleChange}
-                        className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"/>
-                <label htmlFor="is_approved" className="ml-2 block text-sm text-gray-900">Restaurant is Approved</label>
+                    className="h-4 w-4 text-primary-600 border-gray-300 dark:border-gray-500 rounded focus:ring-primary-500"/>
+                <label htmlFor="is_approved" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">Miratuar</label>
             </div>
         </div>
+        
+        <div>
+            <label htmlFor="image" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Foto e Restorantit (Opsionale)</label>
+            <input type="file" name="image" id="image" accept="image/*" onChange={handleChange}
+                   className="mt-1 block w-full text-sm text-gray-500 dark:text-gray-400
+                              file:mr-4 file:py-2 file:px-4
+                              file:rounded-md file:border-0 file:shadow-sm
+                              file:text-sm file:font-semibold
+                              file:bg-primary-50 dark:file:bg-gray-600 file:text-primary-700 dark:file:text-primary-300
+                              hover:file:bg-primary-100 dark:hover:file:bg-gray-500 cursor-pointer" />
+            {imagePreview && (
+                <div className="mt-3 relative group w-32 h-32">
+                    <img src={imagePreview} alt="Parapamje" className="h-32 w-32 rounded-md object-cover shadow-md"/>
+                     <Button variant="danger" size="sm" type="button" 
+                            onClick={() => { setFormData(prev => ({...prev, image: null, image_url: restaurant?.image || ''})); setImagePreview(restaurant?.image || '');}}
+                            className="absolute top-1 right-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity !rounded-full"
+                            title="Hiq foton e re / Kthe foton origjinale">
+                        <HeroIcon icon="XMarkIcon" className="h-3 w-3"/>
+                    </Button>
+                </div>
+            )}
+        </div>
 
-
-        <div className="pt-4 flex justify-end space-x-2">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={isLoading}>Cancel</Button>
+        <div className="pt-3 flex justify-end space-x-3">
+          <Button type="button" variant="ghost" onClick={onClose} disabled={isLoading}>
+            Anulo
+          </Button>
           <Button type="submit" variant="primary" isLoading={isLoading} disabled={isLoading}>
-            {restaurantToEdit ? "Save Changes" : "Create Restaurant"}
+            {restaurant ? 'Ruaj Ndryshimet' : 'Shto Restorant'}
           </Button>
         </div>
       </form>

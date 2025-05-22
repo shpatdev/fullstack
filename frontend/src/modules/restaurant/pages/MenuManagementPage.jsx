@@ -1,263 +1,188 @@
-// filepath: frontend/src/modules/restaurant/pages/MenuManagementPage.jsx
-import React, { useState, useEffect, useCallback, useContext } from 'react';
-// Adjust this import: remove PlusCircle if no other lucide icons are used from this specific line after change
-import { Loader2, AlertTriangle, ListFilter, Edit3, Trash2, ToggleLeft, ToggleRight } from 'lucide-react'; // PlusCircle removed, kept others that might be used by sub-components or future additions
-import { useAuth } from '../../../context/AuthContext.jsx'; // Corrected if it was wrong
-import { useNotification } from '../../../context/NotificationContext.jsx';
-import { restaurantApi } from '../../../api/restaurantApi.js';
-import MenuCategoryCard from '../components/MenuCategoryCard.jsx';
-import MenuItemTableRow from '../components/MenuItemTableRow.jsx';
-import MenuCategoryFormModal from '../components/MenuCategoryFormModal.jsx';
-import MenuItemFormModal from '../components/MenuItemFormModal.jsx';
-import ConfirmationModal from '../../../components/ConfirmationModal.jsx';
-import HeroIcon from '../../../components/HeroIcon.jsx'; // Added HeroIcon
+// src/modules/restaurant/pages/MenuManagementPage.jsx
+import React, { useState, useEffect, useCallback } from 'react';
+import { useOutletContext } from 'react-router-dom'; // Added
+import { restaurantApi } from '../../../api/restaurantApi';
+import { useAuth } from '../../../context/AuthContext';
+import { useNotification } from '../../../context/NotificationContext';
+import Button from '../../../components/Button';
+import HeroIcon from '../../../components/HeroIcon';
+import MenuCategoryCard from '../components/MenuCategoryCard';
+import MenuItemTableRow from '../components/MenuItemTableRow';
+import MenuCategoryFormModal from '../components/MenuCategoryFormModal';
+import MenuItemFormModal from '../components/MenuItemFormModal';
+import ConfirmationModal from '../../../components/ConfirmationModal';
 
 const MenuManagementPage = () => {
-    const { currentRestaurant, token } = useAuth(); // Corrected if it was wrong
-    const restaurantId = currentRestaurant?.id;
-    const { showNotification } = useNotification();
+  const { token } = useAuth();
+  const { currentRestaurantId } = useOutletContext(); // Get from layout
+  const { showSuccess, showError } = useNotification();
 
-    const [menuCategories, setMenuCategories] = useState([]);
-    const [menuItems, setMenuItems] = useState([]);
-    const [isLoadingCategories, setIsLoadingCategories] = useState(true);
-    const [isLoadingItems, setIsLoadingItems] = useState(true);
-    const [error, setError] = useState(null);
-    
-    const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-    const [editingCategory, setEditingCategory] = useState(null);
-    const [isItemModalOpen, setIsItemModalOpen] = useState(false);
-    const [editingItem, setEditingItem] = useState(null);
-    
-    const [isConfirmDeleteModalOpen, setIsConfirmDeleteModalOpen] = useState(false);
-    const [itemToDelete, setItemToDelete] = useState(null);
-    const [isDeleting, setIsDeleting] = useState(false);
-    const [activeFilterCategory, setActiveFilterCategory] = useState('all');
+  const [menuCategories, setMenuCategories] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
+  const [isLoading, setIsLoading] = useState({ categories: false, items: false, page: true });
+  const [error, setError] = useState(null);
 
-    const fetchCategories = useCallback(async () => {
-        if (!restaurantId || !token) { setIsLoadingCategories(false); setMenuCategories([]); return; }
-        setIsLoadingCategories(true); setError(null);
-        try {
-            const data = await restaurantApi.fetchMenuCategories(restaurantId, token);
-            setMenuCategories(data.sort((a,b) => (a.order || 0) - (b.order || 0)));
-        } catch (err) { 
-            setError(err.message || "Failed to load categories"); 
-            showNotification(err.message || "Failed to load categories", 'error'); 
-            setMenuCategories([]);
-        } 
-        finally { setIsLoadingCategories(false); }
-    }, [restaurantId, token, showNotification]);
-
-    const fetchItems = useCallback(async () => {
-        if (!restaurantId || !token) { setIsLoadingItems(false); setMenuItems([]); return; }
-        setIsLoadingItems(true); // No general setError(null) here to preserve category error if item fetch fails
-        try {
-            const data = await restaurantApi.fetchMenuItems(restaurantId, token);
-            setMenuItems(data);
-        } catch (err) { 
-            // Set a more specific item error or append to general error
-            const itemErrorMsg = err.message || "Failed to load menu items";
-            setError(prevError => prevError ? `${prevError}\n${itemErrorMsg}`: itemErrorMsg); 
-            showNotification(itemErrorMsg, 'error'); 
-            setMenuItems([]);
-        } 
-        finally { setIsLoadingItems(false); }
-    }, [restaurantId, token, showNotification]);
-
-    useEffect(() => {
-        fetchCategories();
-        fetchItems();
-    }, [fetchCategories, fetchItems]);
-
-    const handleOpenCategoryModal = (category = null) => { setEditingCategory(category); setIsCategoryModalOpen(true); };
-    const handleCloseCategoryModal = () => { setEditingCategory(null); setIsCategoryModalOpen(false); };
-    const handleSaveCategory = async (categoryData) => {
-        setIsLoadingCategories(true); // Use specific loading state
-        try {
-            const payload = { ...categoryData, restaurant: restaurantId }; 
-            if (payload.id) {
-                await restaurantApi.updateMenuCategory(payload.id, payload, token);
-                showNotification('Category updated!', 'success');
-            } else {
-                await restaurantApi.createMenuCategory(payload, token);
-                showNotification('Category created!', 'success');
-            }
-            fetchCategories();
-        } catch (err) { showNotification(err.message || "Failed to save category.", 'error'); } 
-        finally { setIsLoadingCategories(false); handleCloseCategoryModal(); }
-    };
-
-    const handleOpenItemModal = (item = null) => { setEditingItem(item); setIsItemModalOpen(true); };
-    const handleCloseItemModal = () => { setEditingItem(null); setIsItemModalOpen(false); };
-    const handleSaveItem = async (itemData) => {
-        setIsLoadingItems(true); // Use specific loading state
-        try {
-             const payload = { 
-                 ...itemData, 
-                 menu: itemData.menu || currentRestaurant?.defaultMenuId || menuCategories[0]?.menu_id_placeholder, // Ensure a valid menu ID
-                 category: itemData.category, // This should be the category ID
-             };
-             // Remove fields that might not be part of the direct MenuItem model for backend
-             delete payload.categoryId; // if 'category' is the FK field
-             delete payload.restaurantId; 
-             delete payload.menuId;
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [isItemModalOpen, setIsItemModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  
+  // Assuming one menu per restaurant for simplicity, can be fetched or static
+  const menuId = currentRestaurantId ? `MENU_RESTAURANT_${currentRestaurantId}` : null; // Example menuId derivation
 
 
-            if (itemData.id) {
-                await restaurantApi.updateMenuItem(itemData.id, payload, token);
-                showNotification('Menu item updated!', 'success');
-            } else {
-                await restaurantApi.createMenuItem(payload, token);
-                showNotification('Menu item created!', 'success');
-            }
-            fetchItems();
-        } catch (err) { showNotification(err.message || "Failed to save menu item.", 'error'); } 
-        finally { setIsLoadingItems(false); handleCloseItemModal(); }
-    };
-    
-    const handleDeleteRequest = (targetId, type, name) => { 
-        setItemToDelete({ id: targetId, type, name }); 
-        setIsConfirmDeleteModalOpen(true); 
-    };
-    const handleCloseConfirmDeleteModal = () => { setItemToDelete(null); setIsConfirmDeleteModalOpen(false); };
-    const handleConfirmDelete = async () => {
-        if (!itemToDelete) return;
-        setIsDeleting(true);
-        try {
-            if (itemToDelete.type === 'category') {
-                await restaurantApi.deleteMenuCategory(itemToDelete.id, token);
-                showNotification(`Category "${itemToDelete.name}" deleted!`, 'success');
-                fetchCategories(); fetchItems(); 
-            } else if (itemToDelete.type === 'item') {
-                await restaurantApi.deleteMenuItem(itemToDelete.id, token);
-                showNotification(`Menu item "${itemToDelete.name}" deleted!`, 'success');
-                fetchItems();
-            }
-        } catch (err) { showNotification(err.message || "Deletion failed.", 'error'); } 
-        finally { setIsDeleting(false); handleCloseConfirmDeleteModal(); }
-    };
+  const fetchMenuData = useCallback(async () => {
+    if (!currentRestaurantId || !token) {
+      setError("Restoranti nuk është zgjedhur ose nuk jeni të kyçur.");
+      setIsLoading({ categories: false, items: false, page: false });
+      return;
+    }
+    setIsLoading({ categories: true, items: true, page: false }); // page false after initial load attempt
+    setError(null);
+    try {
+      const [categoriesData, itemsData] = await Promise.all([
+        restaurantApi.fetchMenuCategories(currentRestaurantId, token),
+        restaurantApi.fetchMenuItems(currentRestaurantId, token) // Assuming this fetches all items for the restaurant
+      ]);
+      setMenuCategories(categoriesData || []);
+      setMenuItems(itemsData || []);
+    } catch (err) {
+      console.error("MenuManagement: Failed to fetch menu data:", err);
+      const errMsg = err.message || "S'u mund të ngarkoheshin të dhënat e menusë.";
+      setError(errMsg);
+      showError(errMsg);
+    } finally {
+      setIsLoading({ categories: false, items: false, page: false });
+    }
+  }, [currentRestaurantId, token, showError]);
 
-    const handleToggleItemAvailability = async (item) => {
-        const updatedItemData = { ...item, is_available: !item.is_available };
-        // Send only the fields that change for PATCH, or full object for PUT
-        // For this mock, backend updateMenuItem handles partial updates.
-        try {
-            await restaurantApi.updateMenuItem(item.id, { is_available: updatedItemData.is_available }, token);
-            showNotification(`Item "${item.name}" availability updated.`, 'success');
-            fetchItems();
-        } catch (err) {
-            showNotification(err.message || "Failed to update item availability.", 'error');
-        }
-    };
-    
-    const filteredMenuItems = activeFilterCategory === 'all' 
-        ? menuItems 
-        : menuItems.filter(item => String(item.category) === String(activeFilterCategory) || String(item.category?.id) === String(activeFilterCategory));
+  useEffect(() => {
+    if(currentRestaurantId){ // Only fetch if restaurantId is available
+        setIsLoading(prev => ({...prev, page: false})); // Initial "page" load is done
+        fetchMenuData();
+    } else {
+        setIsLoading({ categories: false, items: false, page: false });
+        setError("Ju lutem zgjidhni një restorant për të menaxhuar menunë.");
+    }
+  }, [fetchMenuData, currentRestaurantId]);
 
+  const handleOpenCategoryModal = (category = null) => { setEditingCategory(category); setIsCategoryModalOpen(true); };
+  const handleSaveCategory = () => { fetchMenuData(); };
 
-     return (
-     <div className="p-4 md:p-6 space-y-8">
-         <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Menu Management: {currentRestaurant?.name}</h1>
+  const handleOpenItemModal = (item = null) => { setEditingItem(item); setIsItemModalOpen(true); };
+  const handleSaveItem = () => { fetchMenuData(); };
+  
+  const handleDeleteClick = (id, type, name) => { setItemToDelete({ id, type, name }); setIsConfirmModalOpen(true); };
+  
+  const confirmDeletion = async () => {
+    if (!itemToDelete || !token) return;
+    setIsConfirmModalOpen(false);
+    const { id, type } = itemToDelete;
+    setIsLoading(prev => ({ ...prev, [type === 'category' ? 'categories' : 'items']: true }));
+    try {
+      if (type === 'category') {
+        await restaurantApi.deleteMenuCategory(id, token);
+        showSuccess('Kategoria u fshi me sukses.');
+      } else {
+        await restaurantApi.deleteMenuItem(id, token);
+        showSuccess('Artikulli u fshi me sukses.');
+      }
+      fetchMenuData();
+    } catch (err) {
+      showError(err.message || `Gabim gjatë fshirjes.`);
+    } finally {
+       setIsLoading(prev => ({ ...prev, [type === 'category' ? 'categories' : 'items']: false }));
+       setItemToDelete(null);
+    }
+  };
+  
+  const handleToggleAvailability = async (itemId, newAvailability) => {
+    setIsLoading(prev => ({ ...prev, items: true }));
+    try {
+        const updatedItem = await restaurantApi.updateMenuItem(itemId, { is_available: newAvailability, restaurantId: currentRestaurantId }, token); // Pass restaurantId for mock
+        setMenuItems(prev => prev.map(i => i.id === itemId ? updatedItem : i));
+        showSuccess(`Disponueshmëria e artikullit u ndryshua.`);
+    } catch (err) { showError(err.message || "Gabim."); } 
+    finally { setIsLoading(prev => ({ ...prev, items: false })); }
+  };
+  
+  const getCategoryName = (categoryId) => menuCategories.find(c => c.id === categoryId)?.name || 'E pa kategorizuar';
 
-         {error && <div className="p-4 text-red-600 bg-red-100 rounded-md">Error: {error} <button onClick={() => { fetchCategories(); fetchItems(); }} className="ml-2 text-blue-600 underline">Try again</button></div>}
+  if (isLoading.page) {
+    return <div className="flex justify-center items-center h-[calc(100vh-150px)]"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div></div>;
+  }
+  if (error && !currentRestaurantId) { // Show specific error if no restaurant selected
+    return <div className="text-center text-red-500 dark:text-red-400 py-10 bg-red-50 dark:bg-red-900/30 p-6 rounded-md">{error}</div>;
+  }
 
-         {/* Categories Section */}
-         <section className="bg-white p-4 md:p-6 rounded-xl shadow-lg">
-             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
-                 <h2 className="text-xl font-semibold text-gray-700">Menu Categories</h2>
-                 <button onClick={() => handleOpenCategoryModal()} className="btn-primary text-sm flex items-center disabled:opacity-70" disabled={isLoadingCategories || isLoadingItems}>
-                     <HeroIcon name="plus-circle" className="w-[18px] h-[18px] mr-2" /> Add Category
-                 </button>
-             </div>
-             {isLoadingCategories ? (
-                 <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin h-8 w-8 text-blue-600" /></div>
-             ) : menuCategories.length === 0 ? (
-                 <p className="text-gray-500 text-sm">No categories created yet. Add one to get started!</p>
-             ) : (
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                     {menuCategories.map(cat => (
-                         <MenuCategoryCard 
-                             key={cat.id} 
-                             category={cat}
-                             itemcount={menuItems.filter(item => String(item.category) === String(cat.id) || String(item.category?.id) === String(cat.id)).length}
-                             onEdit={() => handleOpenCategoryModal(cat)} 
-                             onDelete={() => handleDeleteRequest(cat.id, 'category', cat.name)}
-                         />
-                     ))}
-                 </div>
-             )}
-         </section>
+  return (
+    <div className="container mx-auto space-y-10">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white">Menaxhimi i Menusë</h1>
+        <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3 w-full sm:w-auto">
+          <Button fullWidth smFullWidth={false} variant="outline" onClick={() => handleOpenCategoryModal()} iconLeft={<HeroIcon icon="TagIcon" className="h-5 w-5"/>}> Shto Kategori </Button>
+          <Button fullWidth smFullWidth={false} variant="primary" onClick={() => handleOpenItemModal()} iconLeft={<HeroIcon icon="PlusCircleIcon" className="h-5 w-5"/>} disabled={menuCategories.length === 0} title={menuCategories.length === 0 ? "Shtoni kategori fillimisht" : "Shto Artikull"}> Shto Artikull </Button>
+        </div>
+      </div>
 
-        {/* Menu Items Section */}
-         <section className="bg-white p-4 md:p-6 rounded-xl shadow-lg">
-             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-                 <h2 className="text-xl font-semibold text-gray-700">Menu Items</h2>
-                 <div className="flex items-center space-x-3 w-full sm:w-auto">
-                      <div className="relative flex-grow sm:flex-grow-0">
-                         <ListFilter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none z-10" />
-                         <select value={activeFilterCategory} onChange={(e) => setActiveFilterCategory(e.target.value)}
-                             className="appearance-none block w-full bg-white border border-gray-300 hover:border-gray-400 px-3 py-2 pl-10 pr-8 rounded-md shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-500"
-                             disabled={(menuCategories.length === 0 && !isLoadingCategories) || isLoadingItems}>
-                             <option value="all">All Categories</option>
-                             {menuCategories.map(cat => ( <option key={cat.id} value={cat.id}>{cat.name}</option> ))}
-                         </select>
-                     </div>
-                     <button onClick={() => handleOpenItemModal()} className="btn-success text-sm flex items-center disabled:opacity-60" disabled={(menuCategories.length === 0 && !isLoadingCategories) || isLoadingItems}>
-                         <HeroIcon name="plus-circle" className="w-[18px] h-[18px] mr-2" /> Add Menu Item
-                     </button>
-                 </div>
-             </div>
-              {menuCategories.length === 0 && !isLoadingCategories && (
-                 <p className="text-orange-600 bg-orange-50 p-3 rounded-md text-sm flex items-center"><AlertTriangle size={18} className="inline mr-2 flex-shrink-0" />Please add at least one menu category before adding menu items.</p>
-             )}
-             {isLoadingItems ? (
-                 <div className="flex justify-center items-center h-40"><Loader2 className="animate-spin h-8 w-8 text-blue-600" /></div>
-             ) : (menuCategories.length > 0 && filteredMenuItems.length === 0 && activeFilterCategory !== 'all' && !isLoadingCategories && !isLoadingItems) ? (
-                  <p className="text-gray-500 text-sm mt-4">No items found in the selected category "{menuCategories.find(c=> String(c.id) === String(activeFilterCategory))?.name}". Add some or select 'All Categories'.</p>
-             ) : (menuCategories.length > 0 && menuItems.length === 0 && !isLoadingItems && !isLoadingCategories) ? (
-                  <p className="text-gray-500 text-sm mt-4">No menu items created yet for this restaurant. Add some to your categories!</p>
-             ) : menuCategories.length > 0 && filteredMenuItems.length > 0 ? (
-                 <div className="overflow-x-auto">
-                     <table className="w-full text-sm text-left text-gray-500">
-                         <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-                             <tr>
-                                 <th scope="col" className="px-4 py-3">Item</th>
-                                 <th scope="col" className="px-4 py-3">Category</th>
-                                 <th scope="col" className="px-4 py-3">Price</th>
-                                 <th scope="col" className="px-4 py-3 text-center">Available</th>
-                                 <th scope="col" className="px-4 py-3 text-center">Actions</th>
-                             </tr>
-                         </thead>
-                         <tbody>
-                             {filteredMenuItems.map(item => {
-                                 const category = menuCategories.find(c => String(c.id) === String(item.category) || String(c.id) === String(item.category?.id));
-                                 return (<MenuItemTableRow 
-                                            key={item.id} 
-                                            item={item} 
-                                            categoryName={category?.name || 'Uncategorized'} 
-                                            onEdit={() => handleOpenItemModal(item)} 
-                                            onDelete={() => handleDeleteRequest(item.id, 'item', item.name)} 
-                                            onToggleAvailability={handleToggleItemAvailability} 
-                                        />);
-                             })}
-                         </tbody>
-                     </table>
-                 </div>
-             ) : null}
-         </section>
+      <section>
+        <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-white">Kategoritë e Menusë ({menuCategories.length})</h2>
+            {isLoading.categories && <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-primary-500"></div>}
+        </div>
+        {!isLoading.categories && menuCategories.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+            {menuCategories.sort((a,b) => (a.order || 0) - (b.order || 0)).map(category => (
+              <MenuCategoryCard key={category.id} category={category} onEdit={handleOpenCategoryModal}
+                onDelete={(id) => handleDeleteClick(id, 'category', category.name)}
+                itemCount={menuItems.filter(item => item.categoryId === category.id).length} />
+            ))}
+          </div>
+        )}
+        {!isLoading.categories && menuCategories.length === 0 && !error && (
+          <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-lg shadow-md"><HeroIcon icon="TagIcon" className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto mb-3"/><p className="text-gray-500 dark:text-gray-400">Nuk ka kategori.</p></div>
+        )}
+      </section>
 
-         <MenuCategoryFormModal isOpen={isCategoryModalOpen} onClose={handleCloseCategoryModal} onSave={handleSaveCategory} categoryToEdit={editingCategory} isLoading={isLoadingCategories} />
-         <MenuItemFormModal isOpen={isItemModalOpen} onClose={handleCloseItemModal} onSave={handleSaveItem} itemToEdit={editingItem} categories={menuCategories} isLoading={isLoadingItems} />
-         <ConfirmationModal 
-            isOpen={isConfirmDeleteModalOpen} 
-            onClose={handleCloseConfirmDeleteModal} 
-            onConfirm={handleConfirmDelete} 
-            title={`Delete ${itemToDelete?.type === 'category' ? 'Category' : 'Menu Item'}`} 
-            message={`Are you sure you want to delete "${itemToDelete?.name || 'this item'}"? ${itemToDelete?.type === 'category' ? 'This might affect menu items associated with it if not handled by the backend.' : ''} This action cannot be undone.`} 
-            isLoading={isDeleting}
-            confirmButtonVariant="danger"
-        />
-     </div>
- );
+      <section>
+         <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-white">Artikujt e Menusë ({menuItems.length})</h2>
+            {isLoading.items && <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-primary-500"></div>}
+        </div>
+        {!isLoading.items && menuItems.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 shadow-xl rounded-lg overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-700"><tr>{['Artikulli', 'Përshkrimi', 'Kategoria', 'Çmimi', 'Disponueshmëria', 'Veprime'].map(h=><th key={h} scope="col" className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">{h}</th>)}</tr></thead>
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {menuItems.sort((a,b) => (getCategoryName(a.categoryId) || '').localeCompare(getCategoryName(b.categoryId) || '') || a.name.localeCompare(b.name)).map((item) => (
+                  <MenuItemTableRow key={item.id} item={item} categoryName={getCategoryName(item.categoryId)}
+                    onEdit={handleOpenItemModal} onDelete={(id) => handleDeleteClick(id, 'item', item.name)}
+                    onToggleAvailability={handleToggleAvailability} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+         {!isLoading.items && menuItems.length === 0 && !error && (
+          <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-lg shadow-md"><HeroIcon icon="QueueListIcon" className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto mb-3"/><p className="text-gray-500 dark:text-gray-400">Nuk ka artikuj në menu.</p></div>
+        )}
+         {error && currentRestaurantId && <div className="text-center text-red-500 dark:text-red-400 py-5">{error}</div>}
+      </section>
+      
+      <MenuCategoryFormModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)}
+        category={editingCategory} onSave={handleSaveCategory} restaurantId={currentRestaurantId} />
+      <MenuItemFormModal isOpen={isItemModalOpen} onClose={() => setIsItemModalOpen(false)}
+        item={editingItem} categories={menuCategories} onSave={handleSaveItem}
+        restaurantId={currentRestaurantId} menuId={menuId} />
+       <ConfirmationModal isOpen={isConfirmModalOpen} onClose={() => setIsConfirmModalOpen(false)}
+        onConfirm={confirmDeletion} title={`Konfirmo Fshirjen`}
+        message={`Jeni të sigurt që doni të fshini ${itemToDelete?.type === 'category' ? 'kategorinë' : 'artikullin'} "${itemToDelete?.name || ''}"? ${itemToDelete?.type === 'category' ? 'Artikujt brenda saj do mbeten pa kategori.' : ''} Veprim i pakthyeshëm.`}
+        confirmText="Fshij" iconType="danger" isLoading={isLoading.categories || isLoading.items} />
+    </div>
+  );
 };
 
 export default MenuManagementPage;
