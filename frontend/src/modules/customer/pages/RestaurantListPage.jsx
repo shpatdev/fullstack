@@ -1,14 +1,14 @@
 // src/modules/customer/pages/RestaurantListPage.jsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { customerApi } from '../../../api/customerApi.js'; // Adjust path
-import RestaurantCard from '../components/RestaurantCard.jsx'; // Adjust path
+// useNavigate might be used by RestaurantCard for clicks, or Link component
+import { customerApi } from '../../../api/customerApi.js'; // Corrected path
+import RestaurantCard from '../components/RestaurantCard.jsx'; // Corrected path
 
 const RestaurantListPage = () => {
   const [restaurants, setRestaurants] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const navigate = useNavigate();
+  // const navigate = useNavigate(); // Not directly used here, but RestaurantCard might use it or <Link>
 
   useEffect(() => {
     const loadRestaurants = async () => {
@@ -35,6 +35,7 @@ const RestaurantListPage = () => {
       <h1 className="text-3xl font-bold text-gray-800 mb-8 text-center sm:text-left">Discover Restaurants</h1>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
         {restaurants.map(restaurant => (
+          // RestaurantCard will use <Link to={`/restaurants/${restaurant.id}`}>
           <RestaurantCard key={restaurant.id} restaurant={restaurant} />
         ))}
       </div>

@@ -12,8 +12,11 @@ function App() {
     <BrowserRouter>
       <NotificationProvider>
         <AuthProvider>
-          <CartProvider> {/* CartContext might primarily be for customer module */}
-            <TaskProvider> {/* TaskContext might primarily be for courier module */}
+          {/* CartProvider and TaskProvider might be better placed around specific layouts
+              if they are strictly for those roles, but global is fine for now if their
+              internal logic handles role-specific data/behavior correctly. */}
+          <CartProvider>
+            <TaskProvider>
               <AppRoutes />
             </TaskProvider>
           </CartProvider>

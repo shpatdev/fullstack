@@ -1,6 +1,6 @@
 // src/routes/AppRoutes.jsx
 import React from 'react';
-import { Routes, Route, Link as RouterLink } from 'react-router-dom'; // Renamed Link to avoid conflict
+import { Routes, Route, Link as RouterLink } from 'react-router-dom';
 
 // --- Layouts ---
 import AuthLayout from '../layouts/AuthLayout.jsx';
@@ -10,18 +10,18 @@ import DriverLayout from '../layouts/DriverLayout.jsx';
 import AdminLayout from '../layouts/AdminLayout.jsx';
 
 // --- Protected Route Component ---
-import ProtectedRoute from '../components/ProtectedRoute.jsx'; // Ky path duhet të jetë korrekt
+import ProtectedRoute from '../components/ProtectedRoute.jsx';
 
 // --- Auth Pages ---
 import LoginPage from '../modules/auth/pages/Login.jsx';
 import RegisterPage from '../modules/auth/pages/Register.jsx';
-// import AdminLoginPage from '../modules/auth/pages/AdminLoginPage.jsx'; // If you have a separate admin login page
+// import AdminLoginPage from '../modules/auth/pages/AdminLoginPage.jsx'; // Consider if needed or use general login
 
 // --- Customer Pages ---
 import RestaurantListPage from '../modules/customer/pages/RestaurantListPage.jsx';
 import RestaurantDetailPage from '../modules/customer/pages/RestaurantDetailPage.jsx';
 import CartPage from '../modules/customer/pages/CartPage.jsx';
-import ProfilePage from '../modules/customer/pages/ProfilePage.jsx'; // Generic profile page
+import ProfilePage from '../modules/customer/pages/ProfilePage.jsx';
 import CheckoutPage from '../modules/customer/pages/CheckoutPage.jsx';
 import OrderConfirmationPage from '../modules/customer/pages/OrderConfirmationPage.jsx';
 import MyOrdersPage from '../modules/customer/pages/MyOrdersPage.jsx';
@@ -38,7 +38,7 @@ import RO_RestaurantSettingsPage from '../modules/restaurant/pages/RestaurantSet
 import DriverDashboardPage from '../modules/courier/pages/DriverDashboardPage.jsx';
 
 // --- Admin Pages ---
-import AdminOverviewPage from '../modules/admin/pages/AdminOverviewPage.jsx';
+import AdminOverviewPage from '../modules/admin/pages/AdminOverviewPage.jsx'; // You'll need to create this
 import AdminManageUsersPage from '../modules/admin/pages/ManageUsersPage.jsx';
 import AdminManageRestaurantsPage from '../modules/admin/pages/ManageRestaurantsPage.jsx';
 // import AdminOrdersPage from '../modules/admin/pages/AdminOrdersPage.jsx';
@@ -64,7 +64,7 @@ const AppRoutes = () => {
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
-        {/* If you have a separate AdminLoginPage:
+        {/* Example for a specific admin login if you choose to have one
         <Route path="/admin/login" element={<AdminLoginPage />} />
         */}
       </Route>
@@ -75,7 +75,7 @@ const AppRoutes = () => {
         <Route path="home" element={<RestaurantListPage />} />
         <Route path="restaurants/:restaurantId" element={<RestaurantDetailPage />} />
         <Route path="cart" element={
-            <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}> <CartPage /> </ProtectedRoute>
+            <ProtectedRoute allowedRoles={['CUSTOMER']}> <CartPage /> </ProtectedRoute>
         }/>
         <Route path="checkout" element={
             <ProtectedRoute allowedRoles={['CUSTOMER']}> <CheckoutPage /> </ProtectedRoute>
@@ -86,15 +86,14 @@ const AppRoutes = () => {
         <Route path="my-orders" element={
              <ProtectedRoute allowedRoles={['CUSTOMER']}> <MyOrdersPage /> </ProtectedRoute>
         }/>
-        {/* Generic Profile accessible by all authenticated, content adapts based on role */}
-        <Route path="profile" element={ 
-            <ProtectedRoute> <ProfilePage /> </ProtectedRoute>
+        <Route path="profile" element={
+            <ProtectedRoute allowedRoles={['CUSTOMER', 'RESTAURANT_OWNER', 'DRIVER', 'ADMIN']}> <ProfilePage /> </ProtectedRoute>
         }/>
       </Route>
 
       {/* --- Restaurant Owner Routes --- */}
-      <Route 
-        path="/restaurant" 
+      <Route
+        path="/restaurant"
         element={
           <ProtectedRoute allowedRoles={['RESTAURANT_OWNER', 'ADMIN']}>
             <RestaurantOwnerLayout />
@@ -106,11 +105,12 @@ const AppRoutes = () => {
         <Route path="orders" element={<RO_ManageOrdersPage />} />
         <Route path="menu" element={<RO_MenuManagementPage />} />
         <Route path="settings" element={<RO_RestaurantSettingsPage />} />
-        {/* Add other RO routes here */}
+        {/* <Route path="reviews" element={<RO_CustomerReviewsPage />} /> */}
+        {/* <Route path="analytics" element={<RO_AnalyticsPage />} /> */}
       </Route>
 
       {/* --- Courier/Driver Routes --- */}
-      <Route 
+      <Route
         path="/driver"
         element={
           <ProtectedRoute allowedRoles={['DRIVER', 'ADMIN']}>
@@ -124,8 +124,8 @@ const AppRoutes = () => {
       </Route>
 
       {/* --- Admin Routes --- */}
-      <Route 
-        path="/admin" 
+      <Route
+        path="/admin"
         element={
           <ProtectedRoute allowedRoles={['ADMIN']}>
             <AdminLayout />
@@ -139,7 +139,8 @@ const AppRoutes = () => {
         {/* <Route path="orders" element={<AdminOrdersPage />} /> */}
         {/* <Route path="settings" element={<AdminSettingsPage />} /> */}
       </Route>
-      
+
+      {/* Fallback for any other route */}
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

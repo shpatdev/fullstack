@@ -1,29 +1,41 @@
 // src/modules/auth/pages/Login.jsx
-import React, { useState, useContext } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { useAuth } from '../../../context/AuthContext.jsx'; // Sigurohu që path është korrekt
+import { useAuth } from '../../../context/AuthContext.jsx'; // Correct path
 
 const LoginPage = () => {
-  const [email, setEmail] = useState(''); // Backend mund të presë 'username' ose 'email'
+  const [email, setEmail] = useState(''); // Backend might expect 'username' or 'email'
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  
-  const { login } = useAuth(); // Përdor hook-un custom
+
+  const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = location.state?.from?.pathname || "/"; // Ku të kthehet pas login-it
+
+  // Determine where to redirect after login
+  // Default to '/' or a role-specific dashboard
+  const from = location.state?.from?.pathname || "/";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      // Supozojmë se backend-i pret 'username' për login, i cili mund të jetë email ose username.
-      await login({ username: email, password }); 
-      navigate(from, { replace: true }); 
+      // The login function in AuthContext will fetch user details and set the role.
+      // The `from` path will be used for redirection.
+      // If a role-specific default is needed, AuthContext's login or ProtectedRoute could handle it.
+      await login({ username: email, password });
+
+      // Navigate to the intended page or a default based on role (handled by ProtectedRoute/AppRoutes or AuthContext)
+      // For simplicity, we navigate to 'from'. If 'from' was '/login', it might default to '/'
+      // Or, you could inspect the user from AuthContext here (after await login completes)
+      // and navigate to a role-specific dashboard.
+      // e.g. if (user.role === 'ADMIN') navigate('/admin/dashboard'); else navigate(from, { replace: true });
+      navigate(from === "/login" ? "/" : from, { replace: true });
+
     } catch (err) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+      setError(err.response?.data?.detail || err.message || 'Login failed. Please check your credentials.');
       console.error('Login page error:', err);
     }
     setLoading(false);

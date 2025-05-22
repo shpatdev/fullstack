@@ -1,36 +1,36 @@
 // src/modules/admin/pages/ManageUsersPage.jsx
 import React, { useState, useEffect, useCallback, useContext } from 'react';
-// Assuming global components are in src/components/
-import Button from '../../../components/Button.jsx'; 
+import Button from '../../../components/Button.jsx';
 import UserTableRow from '../components/UserTableRow.jsx';
-import UserFormModal from '../components/UserFormModal.jsx';
+import UserFormModal from '../components/UserFormModal.jsx'; // This is the import in question
 import ConfirmationModal from '../../../components/ConfirmationModal.jsx';
 import ToastNotification from '../../../components/ToastNotification.jsx';
-import { adminApi } from '../../../api/adminApi.js'; // Path to your adminApi
-import { AuthContext } from '../../../context/AuthContext.jsx'; // Assuming global AuthContext for token
+import { adminApi } from '../../../api/adminApi.js';
+import { AuthContext } from '../../../context/AuthContext.jsx';
+import HeroIcon from '../../../components/HeroIcon.jsx';
 
-const USER_ROLES = ["CUSTOMER", "RESTAURANT_OWNER", "DELIVERY_PERSONNEL", "ADMIN"]; // Define if not global
-const USER_STATUSES = ["ACTIVE", "SUSPENDED", "PENDING_APPROVAL"]; // Define if not global
+const USER_ROLES = ["CUSTOMER", "RESTAURANT_OWNER", "DRIVER", "ADMIN"];
+const USER_STATUSES = ["ACTIVE", "SUSPENDED", "PENDING_APPROVAL"];
 
 
 const ManageUsersPage = () => {
-    const { token } = useContext(AuthContext); // Get token for API calls
+    const { token } = useContext(AuthContext);
     const [users, setUsers] = useState([]);
-    const [isLoading, setIsLoading] = useState(true); 
-    const [actionLoading, setActionLoading] = useState(false); 
-    const [error, setError] = useState(null); 
-    
+    const [isLoading, setIsLoading] = useState(true);
+    const [actionLoading, setActionLoading] = useState(false);
+    const [error, setError] = useState(null);
+
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
 
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
-    const [userActionTarget, setUserActionTarget] = useState(null); 
-    
+    const [userActionTarget, setUserActionTarget] = useState(null);
+
     const [toast, setToast] = useState({ message: '', type: '', key: 0 });
 
-    const showToast = (message, type = 'info') => {
+    const showToast = useCallback((message, type = 'info') => {
         setToast({ message, type, key: Date.now() });
-    };
+    }, []);
 
     const fetchUsers = useCallback(async () => {
         if (!token) {
@@ -45,13 +45,14 @@ const ManageUsersPage = () => {
             const fetchedUsers = await adminApi.fetchAllUsers(token);
             setUsers(fetchedUsers);
         } catch (err) {
-            setError(err.message || "Failed to fetch users.");
-            showToast(err.message || "Failed to fetch users.", "error");
+            const errMsg = err.message || "Failed to fetch users.";
+            setError(errMsg);
+            showToast(errMsg, "error");
             setUsers([]);
         } finally {
             setIsLoading(false);
         }
-    }, [token, showToast]); // showToast might not be stable if defined inside component without useCallback
+    }, [token, showToast]);
 
     useEffect(() => {
         fetchUsers();
@@ -66,7 +67,7 @@ const ManageUsersPage = () => {
         setEditingUser(user);
         setIsUserModalOpen(true);
     };
-    
+
     const handleCloseUserModal = () => {
         setIsUserModalOpen(false);
         setEditingUser(null);
@@ -75,44 +76,43 @@ const ManageUsersPage = () => {
     const handleSaveUser = async (userData) => {
         setActionLoading(true);
         try {
-            if (editingUser) { 
+            if (editingUser) {
                 await adminApi.updateUser(editingUser.id, userData, token);
                 showToast("User updated successfully!", "success");
-            } else { 
+            } else {
                 await adminApi.createUser(userData, token);
                 showToast("User created successfully!", "success");
             }
             handleCloseUserModal();
-            fetchUsers(); 
+            fetchUsers();
         } catch (err) {
             console.error("Save user error:", err);
             showToast(err.message || "Failed to save user.", "error");
-            // Do not close modal on error, let user correct
-            throw err; // Re-throw for UserFormModal to catch if it has specific error handling
+            throw err;
         } finally {
             setActionLoading(false);
         }
     };
-    
+
     const handleChangeUserStatus = (userId, newStatus) => {
         const user = users.find(u => u.id === userId);
         if (!user) return;
-        setUserActionTarget({ 
-            id: userId, 
-            actionType: 'changeStatus', 
+        setUserActionTarget({
+            id: userId,
+            actionType: 'changeStatus',
             newStatus,
-            message: `Are you sure you want to change status of user "${user.username}" to ${newStatus.replace(/_/g, ' ').toUpperCase()}?`
+            message: `Are you sure you want to change status of user "${user.username || user.email}" to ${newStatus.replace(/_/g, ' ').toUpperCase()}?`
         });
         setIsConfirmModalOpen(true);
     };
-    
+
     const handleDeleteUser = (userId) => {
         const user = users.find(u => u.id === userId);
         if (!user) return;
-        setUserActionTarget({ 
-            id: userId, 
+        setUserActionTarget({
+            id: userId,
             actionType: 'delete',
-            message: `Are you sure you want to delete user "${user.username}" (ID: ${userId})? This action cannot be undone.`
+            message: `Are you sure you want to delete user "${user.username || user.email}" (ID: ${userId})? This action cannot be undone.`
         });
         setIsConfirmModalOpen(true);
     };
@@ -126,11 +126,10 @@ const ManageUsersPage = () => {
                 await adminApi.deleteUser(id, token);
                 showToast("User deleted successfully.", "success");
             } else if (actionType === 'changeStatus') {
-                // Your backend /api/users/{id}/ PATCH should accept "status" field
-                await adminApi.updateUser(id, { status: newStatus }, token); 
+                await adminApi.updateUser(id, { status: newStatus }, token);
                 showToast(`User status changed to ${newStatus.replace(/_/g, ' ').toUpperCase()}.`, "success");
             }
-            fetchUsers(); 
+            fetchUsers();
         } catch (err) {
             console.error("User action error:", err);
             showToast(err.message || "Action failed.", "error");
@@ -140,27 +139,22 @@ const ManageUsersPage = () => {
             setActionLoading(false);
         }
     };
-
-    // ... JSX from Gemini's ManageUsersPage ...
-    // Ensure HeroIcon is imported correctly if used in Button directly
-    // Or Button component internally uses HeroIcon
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 p-4 md:p-6">
             <ToastNotification key={toast.key} message={toast.message} type={toast.type} onDismiss={() => setToast({ message: '', type: ''})} />
             <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-semibold text-gray-800">User Management</h1>
-                <Button onClick={handleOpenCreateUserModal} variant="primary" size="md" disabled={actionLoading}>
-                    <HeroIcon name="plus" className="w-5 h-5 mr-2" /> Create User
+                <Button onClick={handleOpenCreateUserModal} variant="primary" size="md" disabled={actionLoading || isLoading} iconLeft={<HeroIcon name="plus" className="w-5 h-5"/>}>
+                    Create User
                 </Button>
             </div>
 
             {isLoading && <div className="flex justify-center items-center h-64"><div className="text-xl font-semibold text-gray-700">Loading users...</div></div>}
             {error && users.length === 0 && <div className="text-red-500 bg-red-100 p-4 rounded-md">Error: {error} <Button onClick={fetchUsers} variant="secondary" size="sm" className="ml-2">Retry</Button></div>}
-            
+
             {!isLoading && !error && (
                 <div className="bg-white shadow-md rounded-lg overflow-x-auto">
                     <table className="w-full text-sm text-left text-gray-500">
-                        {/* ... table head ... */}
                         <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                         <tr>
                             <th scope="col" className="px-4 py-3">ID</th>
@@ -175,9 +169,9 @@ const ManageUsersPage = () => {
                         <tbody>
                             {users.length > 0 ? (
                                 users.map(user => (
-                                    <UserTableRow 
-                                        key={user.id} 
-                                        user={user} 
+                                    <UserTableRow
+                                        key={user.id}
+                                        user={user}
                                         onEdit={handleOpenEditUserModal}
                                         onDelete={handleDeleteUser}
                                         onChangeStatus={handleChangeUserStatus}
@@ -192,14 +186,12 @@ const ManageUsersPage = () => {
                     </table>
                 </div>
             )}
-            <UserFormModal 
+            <UserFormModal
                 isOpen={isUserModalOpen}
                 onClose={handleCloseUserModal}
-                onSave={handleSaveUser} 
+                onSave={handleSaveUser}
                 userToEdit={editingUser}
-                // Pass USER_ROLES and USER_STATUSES if they are defined locally
-                // USER_ROLES={USER_ROLES} 
-                // USER_STATUSES={USER_STATUSES}
+                isLoading={actionLoading}
             />
             <ConfirmationModal
                 isOpen={isConfirmModalOpen}
