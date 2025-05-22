@@ -7,7 +7,7 @@ import AuthLayout from '../layouts/AuthLayout.jsx';
 import CustomerLayout from '../layouts/CustomerLayout.jsx';
 import RestaurantOwnerLayout from '../layouts/RestaurantOwnerLayout.jsx';
 import DriverLayout from '../layouts/DriverLayout.jsx';
-import AdminLayout from '../layouts/AdminLayout.jsx';
+import AdminLayout from '../layouts/AdminLayout.jsx'; // UNCOMMENTED
 
 // --- Protected Route Component ---
 import ProtectedRoute from '../components/ProtectedRoute.jsx';
@@ -28,20 +28,20 @@ import MyOrdersPage from '../modules/customer/pages/MyOrdersPage.jsx';
 
 // --- Restaurant Owner Pages ---
 // CORRECTED IMPORTS:
-import OverviewPage from '../modules/restaurant/pages/Overview.jsx';
-import ManageOrdersPage from '../modules/restaurant/pages/ManageOrdersPage.jsx';
-import MenuManagementPage from '../modules/restaurant/pages/MenuManagementPage.jsx';
-import RestaurantSettingsPage from '../modules/restaurant/pages/RestaurantSettingsPage.jsx';
+import RO_OverviewPage from '../modules/restaurant/pages/Overview.jsx'; // UNCOMMENTED
+// import ManageOrdersPage from '../modules/restaurant/pages/ManageOrdersPage.jsx';
+// import MenuManagementPage from '../modules/restaurant/pages/MenuManagementPage.jsx';
+// import RestaurantSettingsPage from '../modules/restaurant/pages/RestaurantSettingsPage.jsx';
 // import RO_CustomerReviewsPage from '../modules/restaurant/pages/CustomerReviewsPage.jsx';
 // import RO_AnalyticsPage from '../modules/restaurant/pages/AnalyticsPage.jsx';
 
 // --- Courier/Driver Pages ---
-import DriverDashboardPage from '../modules/courier/pages/DriverDashboardPage.jsx';
+import DriverDashboardPage from '../modules/courier/pages/DriverDashboardPage.jsx'; // UNCOMMENTED
 
 // --- Admin Pages ---
-import AdminOverviewPage from '../modules/admin/pages/AdminOverviewPage.jsx';
-import AdminManageUsersPage from '../modules/admin/pages/ManageUsersPage.jsx';
-import AdminManageRestaurantsPage from '../modules/admin/pages/ManageRestaurantsPage.jsx';
+import AdminOverviewPage from '../modules/admin/pages/AdminOverviewPage.jsx'; // UNCOMMENTED
+import AdminManageUsersPage from '../modules/admin/pages/ManageUsersPage.jsx'; // UNCOMMENTED
+// import AdminManageRestaurantsPage from '../modules/admin/pages/ManageRestaurantsPage.jsx'; // COMMENTED
 // import AdminOrdersPage from '../modules/admin/pages/AdminOrdersPage.jsx';
 // import AdminSettingsPage from '../modules/admin/pages/AdminSettingsPage.jsx';
 
@@ -93,7 +93,7 @@ const AppRoutes = () => {
         }/>
       </Route>
 
-      {/* --- Restaurant Owner Routes --- */}
+      {/* --- Restaurant Owner Routes --- UNCOMMENTING THIS BLOCK --- */}
       <Route
         path="/restaurant"
         element={
@@ -102,45 +102,39 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       >
-        {/* CORRECTED ELEMENT USAGE: */}
-        <Route index element={<OverviewPage />} />
-        <Route path="dashboard" element={<OverviewPage />} />
-        <Route path="orders" element={<ManageOrdersPage />} />
-        <Route path="menu" element={<MenuManagementPage />} />
-        <Route path="settings" element={<RestaurantSettingsPage />} />
-        {/* <Route path="reviews" element={<RO_CustomerReviewsPage />} /> */}
-        {/* <Route path="analytics" element={<RO_AnalyticsPage />} /> */}
+        <Route index element={<RO_OverviewPage />} />
+        <Route path="dashboard" element={<RO_OverviewPage />} />
+        {/* <Route path="orders" element={<ManageOrdersPage />} /> ... etc. */}
       </Route>
 
       {/* --- Courier/Driver Routes --- */}
       <Route
         path="/driver"
         element={
-          <ProtectedRoute allowedRoles={['DRIVER', 'ADMIN']}>
+          <ProtectedRoute allowedRoles={['DRIVER', 'ADMIN']}> {/* Ensure ProtectedRoute import is also active */}
             <DriverLayout />
           </ProtectedRoute>
         }
       >
         <Route index element={<DriverDashboardPage />} />
         <Route path="dashboard" element={<DriverDashboardPage />} />
-        {/* Add other Driver routes here */}
+        {/* Add other Driver routes here if any, but keep them commented for now */}
       </Route>
 
       {/* --- Admin Routes --- */}
       <Route
         path="/admin"
         element={
-          <ProtectedRoute allowedRoles={['ADMIN']}>
+          <ProtectedRoute allowedRoles={['ADMIN']}> {/* Ensure ProtectedRoute import is also active */}
             <AdminLayout />
           </ProtectedRoute>
         }
       >
         <Route index element={<AdminOverviewPage />} />
         <Route path="dashboard" element={<AdminOverviewPage />} />
-        <Route path="users" element={<AdminManageUsersPage />} />
-        <Route path="restaurants" element={<AdminManageRestaurantsPage />} />
-        {/* <Route path="orders" element={<AdminOrdersPage />} /> */}
-        {/* <Route path="settings" element={<AdminSettingsPage />} /> */}
+        <Route path="users" element={<AdminManageUsersPage />} /> {/* UNCOMMENTED */}
+        {/* <Route path="restaurants" element={<AdminManageRestaurantsPage />} /> */}
+        {/* Other admin routes remain commented for now */}
       </Route>
 
       {/* Fallback for any other route */}
