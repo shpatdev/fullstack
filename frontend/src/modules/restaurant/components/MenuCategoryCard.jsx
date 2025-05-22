@@ -1,29 +1,33 @@
-// src/modules/restaurant/components/MenuCategoryCard.jsx
+// filepath: frontend/src/modules/restaurant/components/MenuCategoryCard.jsx
 import React from 'react';
-import { Edit3, Trash2 } from 'lucide-react';
+// Removed Edit3, Trash2 from lucide-react
+import HeroIcon from '../../../components/HeroIcon.jsx'; // Added HeroIcon
 
-const MenuCategoryCard = ({ category, onEdit, onDelete }) => {
+const MenuCategoryCard = ({ category, onEdit, onDelete, itemcount }) => { // Added itemcount
     return (
-        <div className="bg-white p-4 rounded-lg shadow-md hover:shadow-lg transition-shadow flex justify-between items-center">
+        <div className="bg-gray-50 p-4 rounded-lg shadow hover:shadow-md transition-shadow flex justify-between items-center">
             <div>
-                <h3 className="text-md font-semibold text-gray-800">{category.name}</h3>
-                {category.description && <p className="text-xs text-gray-500 mt-1">{category.description}</p>}
-                {/* <p className="text-xs text-gray-400 mt-1">Order: {category.order || 0}</p> */}
+                <h4 className="text-md font-semibold text-gray-800">{category.name}</h4>
+                {category.description && <p className="text-xs text-gray-500 mt-0.5">{category.description}</p>}
+                {/* Display item count if provided */}
+                {typeof itemcount === 'number' && <p className="text-xs text-gray-400 mt-0.5">{itemcount} item(s) in this category</p>}
             </div>
-            <div className="flex space-x-2">
-                <button 
-                    onClick={() => onEdit(category)} 
-                    className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-md transition-colors"
+            <div className="flex items-center space-x-2 flex-shrink-0">
+                <button
+                    onClick={() => onEdit(category)}
+                    className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-md transition-colors"
                     aria-label={`Edit category ${category.name}`}
+                    title={`Edit ${category.name}`}
                 >
-                    <Edit3 size={16} />
+                    <HeroIcon name="pencil" className="w-4 h-4" />
                 </button>
-                <button 
-                    onClick={() => onDelete(category)} // Pass category object for name in confirm modal
-                    className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md transition-colors"
+                <button
+                    onClick={() => onDelete(category.id, 'category', category.name)} // Pass type and name for better confirm message
+                    className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-100 rounded-md transition-colors"
                     aria-label={`Delete category ${category.name}`}
+                    title={`Delete ${category.name}`}
                 >
-                    <Trash2 size={16} />
+                    <HeroIcon name="trash" className="w-4 h-4" />
                 </button>
             </div>
         </div>

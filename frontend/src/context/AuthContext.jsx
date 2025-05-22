@@ -2,24 +2,20 @@
 import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
 import { authApi } from '../api/authApi.js'; // Ensure this path is correct
 
-const AuthContext = createContext(null);
+const AuthContext = createContext(null); // This is the actual context object
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null); // User object, can include role, name, email, ownsRestaurants, driverProfile etc.
+export const AuthProvider = ({ children }) => { // This is the provider component
+  const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('accessToken'));
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loadingAuth, setLoadingAuth] = useState(true); // Crucial for initial load
-  const [currentRestaurant, setCurrentRestaurant] = useState(null); // For Restaurant Owner
-  const [agent, setAgent] = useState(null); // For Driver (Courier)
+  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [currentRestaurant, setCurrentRestaurant] = useState(null);
+  const [agent, setAgent] = useState(null);
 
   const processUserRoleData = useCallback((userData) => {
     setUser(userData);
     if (userData?.role === 'RESTAURANT_OWNER') {
-      // Assuming userData.ownsRestaurants is an array of restaurant objects
-      // and we pick the first one by default or based on some logic.
-      // This logic might be more complex in a real app (e.g., selection screen).
       if (userData.ownsRestaurants && userData.ownsRestaurants.length > 0) {
-        // For mock, if restaurant details are directly on user:
          const mockRestaurant = userData.ownsRestaurants[0];
          setCurrentRestaurant(mockRestaurant);
          localStorage.setItem('currentRestaurant', JSON.stringify(mockRestaurant));
@@ -33,9 +29,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     if (userData?.role === 'DRIVER') {
-        // Assuming driver specific profile data is part of userData or fetched separately
-        // For mock, it might be directly in userData.driverProfile
-        const driverProfile = userData.driverProfile || { id: userData.id, isOnline: false, name: userData.name || userData.username }; // Mock structure
+        const driverProfile = userData.driverProfile || { id: userData.id, isOnline: false, name: userData.name || userData.username };
         setAgent(driverProfile);
         localStorage.setItem('agentProfile', JSON.stringify(driverProfile));
     } else {
@@ -58,7 +52,7 @@ export const AuthProvider = ({ children }) => {
       return null;
     }
     try {
-      const userData = await authApi.fetchCurrentUser(currentToken); // Pass token explicitly if needed by API
+      const userData = await authApi.fetchCurrentUser(currentToken);
       setIsAuthenticated(true);
       processUserRoleData(userData);
       return userData;
@@ -77,16 +71,14 @@ export const AuthProvider = ({ children }) => {
     }
   }, [processUserRoleData]);
 
-
   useEffect(() => {
     const attemptAutoLogin = async () => {
       setLoadingAuth(true);
       const storedToken = localStorage.getItem('accessToken');
       if (storedToken) {
-        setToken(storedToken); // Set token for apiService to use
+        setToken(storedToken);
         await fetchAndSetUser(storedToken);
       } else {
-         // Clear all auth related states if no token
         setUser(null);
         setIsAuthenticated(false);
         setToken(null);
@@ -98,73 +90,61 @@ export const AuthProvider = ({ children }) => {
     attemptAutoLogin();
   }, [fetchAndSetUser]);
 
-
   const login = async (credentials) => {
     setLoadingAuth(true);
     try {
-      const data = await authApi.login(credentials); // Expects { access, refresh }
+      const data = await authApi.login(credentials);
       localStorage.setItem('accessToken', data.access);
       localStorage.setItem('refreshToken', data.refresh);
       setToken(data.access);
       await fetchAndSetUser(data.access);
-      setLoadingAuth(false);
-      // The userData is returned by fetchAndSetUser and set to state,
-      // so no need to return it from login explicitly unless pages need immediate access
+      // No explicit return here, state update triggers re-renders
     } catch (error) {
-      setLoadingAuth(false);
-      logout(); // Clear any partial state
+      logout(); // Clear any partial state on login failure
       console.error("AuthContext: Login failed", error);
-      throw error; // Re-throw for login page to handle
+      throw error;
+    } finally {
+      setLoadingAuth(false);
     }
   };
 
   const register = async (userDataForApi) => {
     setLoadingAuth(true);
     try {
-      // authApi.register might directly log in the user (return tokens) or just create the user.
-      // Adjust based on your backend's behavior.
       const registeredUserData = await authApi.register(userDataForApi);
-
-      // If backend auto-logins (returns tokens):
       if (registeredUserData.access && registeredUserData.refresh) {
         localStorage.setItem('accessToken', registeredUserData.access);
         localStorage.setItem('refreshToken', registeredUserData.refresh);
         setToken(registeredUserData.access);
         await fetchAndSetUser(registeredUserData.access);
       } else {
-        // If registration does NOT auto-login, user needs to login manually.
-        // For now, we won't auto-login here to keep it simple.
-        // Frontend can redirect to login page with a success message.
-        setIsAuthenticated(false); // Ensure not authenticated yet
+        setIsAuthenticated(false);
       }
-      setLoadingAuth(false);
-      return registeredUserData; // Return data for RegisterPage if needed (e.g., to show success message)
+      return registeredUserData;
     } catch (error) {
-      setLoadingAuth(false);
-      logout(); // Clear any partial state
+      logout(); // Clear any partial state on registration failure
       console.error("AuthContext: Registration failed", error);
-      throw error; // Re-throw for register page to handle
+      throw error;
+    } finally {
+      setLoadingAuth(false);
     }
   };
 
   const logout = useCallback(() => {
-    // TODO: Call backend API to invalidate refresh token if such an endpoint exists
-    // await authApi.logout(localStorage.getItem('refreshToken')); // Example
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('currentRestaurant');
     localStorage.removeItem('agentProfile');
-    localStorage.removeItem('mockRole'); // Clean up mock specific items too
+    localStorage.removeItem('mockRole');
+    localStorage.removeItem('mockUserId');
+    localStorage.removeItem('mockUserDetails');
     setUser(null);
     setToken(null);
     setIsAuthenticated(false);
     setCurrentRestaurant(null);
     setAgent(null);
-    // Navigation to login page should be handled by the component calling logout
-    // or by ProtectedRoutes automatically due to isAuthenticated becoming false.
   }, []);
 
-  // Function for Restaurant Owner to select/change their current restaurant
   const selectRestaurant = (restaurant) => {
     if (user?.role === 'RESTAURANT_OWNER') {
       setCurrentRestaurant(restaurant);
@@ -172,50 +152,55 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Function for Driver to update their profile (e.g., availability)
-    const updateAgentProfile = useCallback((profileUpdates) => {
-        setAgent(prevAgent => {
-            const updatedAgent = { ...prevAgent, ...profileUpdates };
-            localStorage.setItem('agentProfile', JSON.stringify(updatedAgent));
-            return updatedAgent;
-        });
-         // Also update the main user object if agent details are nested there
-        setUser(prevUser => {
-            if (prevUser && prevUser.role === 'DRIVER') {
-                return {
-                    ...prevUser,
-                    driverProfile: { ...(prevUser.driverProfile || {}), ...profileUpdates }
-                };
-            }
-            return prevUser;
-        });
-    }, []);
-
+  const updateAgentProfile = useCallback((profileUpdates) => {
+    setAgent(prevAgent => {
+        const updatedAgent = { ...prevAgent, ...profileUpdates };
+        localStorage.setItem('agentProfile', JSON.stringify(updatedAgent));
+        return updatedAgent;
+    });
+    setUser(prevUser => {
+        if (prevUser && prevUser.role === 'DRIVER') {
+            return {
+                ...prevUser,
+                driverProfile: { ...(prevUser.driverProfile || {}), ...profileUpdates }
+            };
+        }
+        return prevUser;
+    });
+  }, []);
 
   return (
-    <AuthContext.Provider value={{
+    <AuthContext.Provider value={{ // This uses the AuthContext object defined above
       user,
       isAuthenticated,
       token,
       loadingAuth,
-      currentRestaurant, // For Restaurant Owner
-      agent, // For Driver
+      currentRestaurant,
+      agent,
       login,
       register,
       logout,
-      selectRestaurant, // For Restaurant Owner
-      updateAgentProfile, // For Driver
-      fetchCurrentUser: fetchAndSetUser // Expose if manual refresh is needed elsewhere
+      selectRestaurant,
+      updateAgentProfile,
+      fetchCurrentUser: fetchAndSetUser
     }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
+// This is the custom hook to use the context
 export const useAuth = () => {
-  const context = useContext(AuthContext);
+  const context = useContext(AuthContext); // This uses the AuthContext object
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 };
+
+// If you intend for AuthContext itself (the object created by createContext)
+// to be imported directly by other files (which is unusual but possible),
+// you would need to export it directly:
+// export default AuthContext; // for default import
+// OR ensure it's a named export if `AuthContext` is imported with curly braces { AuthContext }
+// The current setup with `export const AuthProvider` and `export const useAuth` is standard.

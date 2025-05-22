@@ -3,12 +3,12 @@ import React, { useContext } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import AdminHeader from '../modules/admin/components/AdminHeader.jsx'; // Assuming path
 import AdminSidebar from '../modules/admin/components/AdminSidebar.jsx'; // Assuming path
-import { AuthContext } from '../context/AuthContext.jsx'; // Assuming a global AuthContext is used
+import { useAuth } from '../context/AuthContext.jsx'; // Changed to useAuth, path might vary
 
 const AdminLayout = () => {
     // This state would now be managed by the router by matching paths
     // const [currentView, setCurrentView] = useState('overview'); 
-    const { isAuthenticated, user, logout } = useContext(AuthContext); // Use global AuthContext
+    const { isAuthenticated, user, logout } = useAuth(); // Use global AuthContext
     const navigate = useNavigate();
     const location = useLocation();
 

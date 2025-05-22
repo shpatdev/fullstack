@@ -1,5 +1,5 @@
 // src/modules/admin/pages/ManageRestaurantsPage.jsx
-import React, { useState, useEffect, useCallback, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useContext, use } from 'react';
 import Button from '../../../components/Button.jsx';
 import RestaurantTableRow from '../components/RestaurantTableRow.jsx';
 import RestaurantFormModal from '../components/RestaurantFormModal.jsx'; // Corrected import path
@@ -7,10 +7,10 @@ import ConfirmationModal from '../../../components/ConfirmationModal.jsx';
 import ToastNotification from '../../../components/ToastNotification.jsx';
 import HeroIcon from '../../../components/HeroIcon.jsx';
 import { adminApi } from '../../../api/adminApi.js';
-import { AuthContext } from '../../../context/AuthContext.jsx';
+import { useAuth } from '../../../context/AuthContext.jsx'; // Changed import
 
 const ManageRestaurantsPage = () => {
-    const { token } = useContext(AuthContext);
+    const { token } = useAuth(); // Changed usage
     const [restaurants, setRestaurants] = useState([]);
     const [potentialOwners, setPotentialOwners] = useState([]);
     const [isLoading, setIsLoading] = useState(true);

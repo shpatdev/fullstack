@@ -1,9 +1,9 @@
 // src/modules/customer/pages/ProfilePage.jsx
-import React, { useContext } from 'react';
-import { AuthContext } from '../../../context/AuthContext.jsx'; // Adjust path
+import React from 'react';
+import { useAuth } from '../../../context/AuthContext.jsx'; // Changed import
 
 const ProfilePage = () => {
-    const { user, loadingAuth } = useContext(AuthContext);
+    const { user, loadingAuth } = useAuth(); // Changed usage
 
     if (loadingAuth) return <div className="text-center p-10">Loading profile...</div>;
     if (!user) return <div className="text-center p-10">User not found. Please login.</div>;

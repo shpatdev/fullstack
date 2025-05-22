@@ -1,7 +1,7 @@
 // src/modules/restaurant/pages/Overview.jsx
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react'; // useContext removed
 import { Loader2 } from 'lucide-react';
-import { AuthContext } from '../../../context/AuthContext.jsx';
+import { useAuth } from '../../../context/AuthContext.jsx'; // AuthContext import removed, useAuth is correct
 import { restaurantApi } from '../../../api/restaurantApi.js';
 
 const Overview = () => {

@@ -1,12 +1,12 @@
 // src/modules/auth/pages/AdminLoginPage.jsx
-import React, { useState, useContext } from 'react';
+import React, { useState } from 'react'; // useContext removed
 import { useNavigate } from 'react-router-dom';
-import { AuthContext } from '../../../context/AuthContext.jsx'; // Assuming global AuthContext
+import { useAuth } from '../../../context/AuthContext.jsx'; // Changed import
 // You might need a specific admin login function if it's different
 // import { adminApi } from '../../../api/adminApi.js'; // If login is specialized for admin
 
 const AdminLoginPage = () => { 
-    const { login } = useContext(AuthContext); // Using global login
+    const { login } = useAuth(); // Changed usage
     const navigate = useNavigate();
     const [email, setEmail] = useState('admin@example.com'); 
     const [password, setPassword] = useState('password'); 

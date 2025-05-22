@@ -1,12 +1,12 @@
 // src/modules/courier/pages/DriverDashboardPage.jsx
-import React, { useContext } from 'react';
+import React from 'react'; // useContext removed
 import AvailableTasksSection from '../components/AvailableTasksSection.jsx';
 import ActiveDeliverySection from '../components/ActiveDeliverySection.jsx';
-import DeliveryHistorySection from '../components/DeliveryHistorySection.jsx'; // Corrected import path
-import { AuthContext } from '../../../context/AuthContext.jsx';
+import DeliveryHistorySection from '../components/DeliveryHistorySection.jsx';
+import { useAuth } from '../../../context/AuthContext.jsx'; // Changed import
 
 const DriverDashboardPage = () => {
-  const { agent } = useContext(AuthContext);
+  const { agent } = useAuth(); // Changed usage
 
   return (
     <div className="space-y-6">

@@ -1,12 +1,12 @@
 // src/modules/restaurant/components/MenuCategoryFormModal.jsx
 import React, { useState, useEffect, useContext } from 'react';
 import { XCircle, Loader2 } from 'lucide-react';
-import { AuthContext } from '../../../context/AuthContext.jsx';
+import { useAuth } from '../../../context/AuthContext.jsx'; // Adjust the import path as necessary
 
 const MenuCategoryFormModal = ({ isOpen, onClose, onSave, categoryToEdit, isLoading }) => {
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
-    const { currentRestaurant } = useContext(AuthContext);
+    const { currentRestaurant } = useAuth();
 
     useEffect(() => {
         if (isOpen) { // Reset form when modal becomes visible or categoryToEdit changes

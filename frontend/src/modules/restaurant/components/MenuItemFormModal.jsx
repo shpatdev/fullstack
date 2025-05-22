@@ -1,7 +1,7 @@
 // src/modules/restaurant/components/MenuItemFormModal.jsx
 import React, { useState, useEffect, useContext } from 'react';
 import { XCircle, Loader2 } from 'lucide-react';
-import { AuthContext } from '../../../context/AuthContext.jsx';
+import { useAuth } from '../../../context/AuthContext.jsx'; // Adjust the import path as necessary
 
 const MenuItemFormModal = ({ isOpen, onClose, onSave, itemToEdit, categories = [], isLoading }) => {
     const [name, setName] = useState('');
@@ -10,7 +10,7 @@ const MenuItemFormModal = ({ isOpen, onClose, onSave, itemToEdit, categories = [
     const [categoryId, setCategoryId] = useState('');
     const [isAvailable, setIsAvailable] = useState(true);
     const [image, setImage] = useState('');
-    const { currentRestaurant } = useContext(AuthContext);
+    const { currentRestaurant } = useAuth();
 
     useEffect(() => {
         if (isOpen) { // Reset form when modal opens

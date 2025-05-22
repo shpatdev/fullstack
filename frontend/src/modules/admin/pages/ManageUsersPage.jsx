@@ -6,7 +6,7 @@ import UserFormModal from '../components/UserFormModal.jsx'; // This is the impo
 import ConfirmationModal from '../../../components/ConfirmationModal.jsx';
 import ToastNotification from '../../../components/ToastNotification.jsx';
 import { adminApi } from '../../../api/adminApi.js';
-import { AuthContext } from '../../../context/AuthContext.jsx';
+import { useAuth } from '../../../context/AuthContext.jsx'; // Changed import
 import HeroIcon from '../../../components/HeroIcon.jsx';
 
 const USER_ROLES = ["CUSTOMER", "RESTAURANT_OWNER", "DRIVER", "ADMIN"];
@@ -14,7 +14,7 @@ const USER_STATUSES = ["ACTIVE", "SUSPENDED", "PENDING_APPROVAL"];
 
 
 const ManageUsersPage = () => {
-    const { token } = useContext(AuthContext);
+    const { token } = useAuth(); // Changed usage
     const [users, setUsers] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);

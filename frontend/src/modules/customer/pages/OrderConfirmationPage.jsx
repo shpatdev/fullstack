@@ -1,9 +1,8 @@
 // src/modules/customer/pages/OrderConfirmationPage.jsx
 import React from 'react';
-import { useParams, Link } from 'react-router-dom'; // Use real react-router-dom
+import { useParams, Link } from 'react-router-dom';
+import HeroIcon from '../../../components/HeroIcon.jsx'; // Add this import
 
-// Assume CheckCircleIcon is global or import it
-const CheckCircleIcon = () => (<svg className="w-16 h-16 text-green-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>);
 
 const OrderConfirmationPage = () => {
     const { orderId } = useParams(); // Get orderId from URL
@@ -29,9 +28,9 @@ const OrderConfirmationPage = () => {
     // For now, just display the ID and a generic message.
 
     return (
-        <div className="container mx-auto px-4 py-12 text-center">
-            <div className="bg-white p-8 md:p-12 rounded-xl shadow-2xl max-w-lg mx-auto">
-                <CheckCircleIcon />
+        <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 flex flex-col justify-center items-center p-4">
+            <div className="bg-white p-8 md:p-12 rounded-xl shadow-2xl max-w-lg mx-auto text-center">
+                <HeroIcon name="check-circle" className="w-16 h-16 text-green-500 mx-auto mb-6" /> {/* Replace here */}
                 <h1 className="text-3xl font-bold text-gray-800 mb-3">Thank You for Your Order!</h1>
                 <p className="text-gray-600 mb-2">Your order has been placed successfully.</p>
                 <p className="text-lg text-gray-700 font-semibold mb-6">Order ID: <span className="text-indigo-600">{orderId}</span></p>

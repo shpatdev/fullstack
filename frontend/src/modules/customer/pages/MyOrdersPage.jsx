@@ -1,15 +1,15 @@
 // src/modules/customer/pages/MyOrdersPage.jsx
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react'; // useContext removed
 import { Link } from 'react-router-dom';
-import { AuthContext } from '../../../context/AuthContext.jsx';
+import { useAuth } from '../../../context/AuthContext.jsx'; // Changed import
 import { customerApi } from '../../../api/customerApi.js';
-import OrderHistoryItem from '../components/OrderHistoryItem.jsx'; // Assuming this path
+import OrderHistoryItem from '../components/OrderHistoryItem.jsx';
 
 const MyOrdersPage = () => {
     const [orders, setOrders] = useState([]);
     const [loadingOrders, setLoadingOrders] = useState(true);
     const [ordersError, setOrdersError] = useState(null);
-    const { isAuthenticated, token } = useContext(AuthContext); // Get token
+    const { isAuthenticated, token } = useAuth(); // Changed usage
 
     useEffect(() => {
         const loadOrders = async () => {

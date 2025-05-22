@@ -1,24 +1,21 @@
-// src/layouts/CustomerLayout.jsx
-import React, { useContext } from 'react';
-import { Outlet, Link, useNavigate } from 'react-router-dom'; // Use real react-router-dom
-import { AuthContext } from '../context/AuthContext.jsx';
-import { CartContext } from '../context/CartContext.jsx';
+// filepath: frontend/src/layouts/CustomerLayout.jsx
+import React from 'react'; // Removed useContext as useAuth/useCart are used
+import { Outlet, Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx'; // Corrected to useAuth
+import { useCart } from '../context/CartContext.jsx'; // Corrected to useCart
+import HeroIcon from '../components/HeroIcon.jsx'; // Added import
 
-// Icon Components (Ideally import from src/components/icons/ or use a library like lucide-react)
-const FoodDashLogo = () => ( <svg className="w-10 h-10 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"> <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M5 6h14M5 10h14M5 14h14M5 18h14"></path> </svg> );
-const ShoppingCartIcon = () => ( <svg className="w-6 h-6 text-gray-600" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"> <path d="M3 1a1 1 0 000 2h1.22l.305 1.222a.997.997 0 00.01.042l1.358 5.43-.893.892C3.74 11.846 4.632 14 6.414 14H15a1 1 0 000-2H6.414l1-1H14a1 1 0 00.894-.553l3-6A1 1 0 0017 3H6.28l-.31-1.243A1 1 0 005 1H3zM16 16.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM6.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"></path> </svg> );
-const UserCircleIcon = () => ( <svg className="w-6 h-6 text-gray-600" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"> <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0012 11z" clipRule="evenodd"></path> </svg> );
-
+// Inline icon definitions are removed as they are now in HeroIcon.jsx
 
 const CustomerLayout = () => {
-  const { isAuthenticated, user, logout } = useContext(AuthContext);
-  const { cart } = useContext(CartContext); 
+  const { isAuthenticated, user, logout } = useAuth();
+  const { cart } = useCart();
   const cartItemCount = cart && cart.items ? cart.items.reduce((count, item) => count + item.quantity, 0) : 0;
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    logout(); 
-    navigate('/login'); 
+    logout();
+    navigate('/login');
   };
 
   return (
@@ -27,8 +24,8 @@ const CustomerLayout = () => {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
-              <Link to="/" className="flex items-center"> {/* Changed to Link */}
-                <FoodDashLogo />
+              <Link to="/" className="flex items-center">
+                <HeroIcon name="food-dash-logo" className="w-10 h-10 text-indigo-600" />
                 <span className="ml-3 text-2xl font-bold text-indigo-600">FoodDash</span>
               </Link>
             </div>
@@ -36,13 +33,13 @@ const CustomerLayout = () => {
               {isAuthenticated && user ? (
                 <>
                   <span className="text-sm font-medium text-gray-700 hidden md:block">
-                    Hi, {user.name || user.email?.split('@')[0]}!
+                    Hi, {user.name || user.username || user.email?.split('@')[0]}!
                   </span>
                   <Link to="/profile" className="p-2 rounded-lg hover:bg-gray-100" aria-label="Profile">
-                    <UserCircleIcon />
+                    <HeroIcon name="user-circle" className="w-6 h-6 text-gray-600" />
                   </Link>
                   <Link to="/cart" className="p-2 rounded-lg hover:bg-gray-100 relative" aria-label="Shopping Cart">
-                    <ShoppingCartIcon />
+                    <HeroIcon name="shopping-cart" className="w-6 h-6 text-gray-600" />
                     {cartItemCount > 0 && (
                       <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                         {cartItemCount}

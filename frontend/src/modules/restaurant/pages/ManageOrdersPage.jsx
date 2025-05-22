@@ -1,14 +1,14 @@
 // src/modules/restaurant/pages/ManageOrdersPage.jsx
-import React, { useState, useEffect, useCallback, useContext } from 'react';
+import React, { useState, useEffect, useCallback } from 'react'; // useContext removed
 import { Loader2, RefreshCw, Eye } from 'lucide-react';
-import { AuthContext } from '../../../context/AuthContext.jsx';
+import { useAuth } from '../../../context/AuthContext.jsx'; // AuthContext import removed, useAuth is correct
 import { useNotification } from '../../../context/NotificationContext.jsx';
 import { restaurantApi } from '../../../api/restaurantApi.js';
 import OrderTableRow from '../components/OrderTableRow.jsx'; // Path to component
 import OrderDetailModal from '../components/OrderDetailModal.jsx'; // Path to component
 
 const ManageOrdersPage = () => {
-  const { currentRestaurant, token } = useAuth();
+  const { currentRestaurant, token } = useAuth(); // This is already correct
   const restaurantId = currentRestaurant?.id; // Get restaurantId from context
 
   const [orders, setOrders] = useState([]);

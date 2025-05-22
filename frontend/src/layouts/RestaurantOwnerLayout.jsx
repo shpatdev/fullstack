@@ -1,14 +1,14 @@
 // src/layouts/RestaurantOwnerLayout.jsx
-import React, { useState, useContext } from 'react';
+import React, { useState } from 'react';
 import { Outlet, useNavigate } // Use real react-router-dom
 from 'react-router-dom'; 
 import Sidebar from '../modules/restaurant/components/Sidebar.jsx'; // Assuming Sidebar is moved
-import { AuthContext } from '../context/AuthContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx'; // Changed import
 import { useNotification } from '../context/NotificationContext.jsx'; // Assuming global
 
 const RestaurantOwnerLayout = () => {
   const [activeSection, setActiveSection] = useState('overview'); // Managed by router now
-  const { currentRestaurant, user, logout } = useContext(AuthContext);
+  const { currentRestaurant, user, logout } = useAuth(); // Changed usage
   const { showNotification } = useNotification();
   const navigate = useNavigate();
 
