@@ -1,6 +1,5 @@
 // src/api/apiService.js
-// Base URL for your Django backend
-const API_BASE_URL = 'http://localhost:8000/api'; // Replace if different
+const API_BASE_URL = 'http://localhost:8000/api'; // Replace with your actual backend URL
 
 export const apiService = {
   getAuthToken: () => localStorage.getItem('accessToken'), // Or however you store your token
@@ -16,6 +15,7 @@ export const apiService = {
     }
 
     try {
+      console.log(`API Request: ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`, { headers, body: options.body ? 'Present' : 'Not Present' });
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         ...options,
         headers,
@@ -25,18 +25,28 @@ export const apiService = {
         return null; 
       }
 
-      const responseData = await response.json();
+      let responseData;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+          responseData = await response.json();
+      } else {
+          const textResponse = await response.text();
+          responseData = { detail: textResponse || response.statusText }; 
+      }
 
       if (!response.ok) {
-        console.error(`API Error ${response.status} for ${endpoint}:`, responseData);
-        // Try to extract a meaningful error message from backend if possible
+        console.error(`API Error ${response.status} for ${API_BASE_URL}${endpoint}:`, responseData);
         const message = responseData.detail || responseData.error || responseData.message || `Request failed with status ${response.status}`;
         throw new Error(message);
       }
       return responseData;
     } catch (error) {
-      console.error(`Network or parsing error for ${endpoint}:`, error);
-      throw error; // Re-throw the error to be caught by the calling function
+      console.error(`Network or parsing error for ${API_BASE_URL}${endpoint}:`, error);
+      if (error instanceof Error) {
+          throw error;
+      } else {
+          throw new Error('An unknown network error occurred.');
+      }
     }
   },
 };
