@@ -27,10 +27,11 @@ import OrderConfirmationPage from '../modules/customer/pages/OrderConfirmationPa
 import MyOrdersPage from '../modules/customer/pages/MyOrdersPage.jsx';
 
 // --- Restaurant Owner Pages ---
-import RO_OverviewPage from '../modules/restaurant/pages/Overview.jsx';
-import RO_ManageOrdersPage from '../modules/restaurant/pages/ManageOrdersPage.jsx';
-import RO_MenuManagementPage from '../modules/restaurant/pages/MenuManagementPage.jsx';
-import RO_RestaurantSettingsPage from '../modules/restaurant/pages/RestaurantSettingsPage.jsx';
+// CORRECTED IMPORTS:
+import OverviewPage from '../modules/restaurant/pages/Overview.jsx';
+import ManageOrdersPage from '../modules/restaurant/pages/ManageOrdersPage.jsx';
+import MenuManagementPage from '../modules/restaurant/pages/MenuManagementPage.jsx';
+import RestaurantSettingsPage from '../modules/restaurant/pages/RestaurantSettingsPage.jsx';
 // import RO_CustomerReviewsPage from '../modules/restaurant/pages/CustomerReviewsPage.jsx';
 // import RO_AnalyticsPage from '../modules/restaurant/pages/AnalyticsPage.jsx';
 
@@ -38,7 +39,7 @@ import RO_RestaurantSettingsPage from '../modules/restaurant/pages/RestaurantSet
 import DriverDashboardPage from '../modules/courier/pages/DriverDashboardPage.jsx';
 
 // --- Admin Pages ---
-import AdminOverviewPage from '../modules/admin/pages/AdminOverviewPage.jsx'; // You'll need to create this
+import AdminOverviewPage from '../modules/admin/pages/AdminOverviewPage.jsx';
 import AdminManageUsersPage from '../modules/admin/pages/ManageUsersPage.jsx';
 import AdminManageRestaurantsPage from '../modules/admin/pages/ManageRestaurantsPage.jsx';
 // import AdminOrdersPage from '../modules/admin/pages/AdminOrdersPage.jsx';
@@ -47,6 +48,7 @@ import AdminManageRestaurantsPage from '../modules/admin/pages/ManageRestaurants
 
 // Fallback Page (404)
 const NotFoundPage = () => (
+    // ... (your NotFoundPage code)
     <div className="min-h-screen flex flex-col items-center justify-center text-center p-4 bg-gray-100">
         <h1 className="text-6xl font-bold text-red-500 mb-4">404</h1>
         <p className="text-2xl text-gray-700 mb-2">Oops! Page Not Found.</p>
@@ -100,11 +102,12 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       >
-        <Route index element={<RO_OverviewPage />} />
-        <Route path="dashboard" element={<RO_OverviewPage />} />
-        <Route path="orders" element={<RO_ManageOrdersPage />} />
-        <Route path="menu" element={<RO_MenuManagementPage />} />
-        <Route path="settings" element={<RO_RestaurantSettingsPage />} />
+        {/* CORRECTED ELEMENT USAGE: */}
+        <Route index element={<OverviewPage />} />
+        <Route path="dashboard" element={<OverviewPage />} />
+        <Route path="orders" element={<ManageOrdersPage />} />
+        <Route path="menu" element={<MenuManagementPage />} />
+        <Route path="settings" element={<RestaurantSettingsPage />} />
         {/* <Route path="reviews" element={<RO_CustomerReviewsPage />} /> */}
         {/* <Route path="analytics" element={<RO_AnalyticsPage />} /> */}
       </Route>
