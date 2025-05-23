@@ -20,7 +20,8 @@ from .views import (
     OrderViewSet, # Ensure OrderViewSet is imported
     ReviewViewSet, # Shto ReviewViewSet
     OperatingHoursViewSet, # Sigurohu që OperatingHoursViewSet është këtu
-    DriverProfileViewSet # Shto DriverProfileViewSet
+    DriverProfileViewSet, # Shto DriverProfileViewSet
+    LogoutAPIView # Shto LogoutAPIView
 )
 
 # Router kryesor
@@ -59,6 +60,7 @@ urlpatterns = [
     path('auth/login/', CustomTokenObtainPairView.as_view(), name='auth_login'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/me/', UserMeAPIView.as_view(), name='auth_me'),
+    path('auth/logout/', LogoutAPIView.as_view(), name='auth_logout'), # KY RRESHT I SHTUAR
     
     # API endpoints të menaxhuara nga router-i kryesor dhe ato nested
     path('', include(router.urls)),

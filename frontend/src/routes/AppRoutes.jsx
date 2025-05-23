@@ -1,6 +1,6 @@
 // src/routes/AppRoutes.jsx
 import React, { Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Link as RouterLink, Navigate } from 'react-router-dom'; // Sigurohu që BrowserRouter është vetëm këtu ose te main.jsx
+import { Routes, Route, Link as RouterLink, Navigate } from 'react-router-dom'; // Sigurohu që BrowserRouter është vetëm këtu ose te main.jsx
 
 // --- Layouts ---
 import AuthLayout from '../layouts/AuthLayout.jsx';
@@ -14,7 +14,7 @@ import ProtectedRoute from '../components/ProtectedRoute.jsx';
 
 // --- Auth Pages ---
 import LoginPage from '../modules/auth/pages/Login.jsx';
-import RegisterPage from '../modules/auth/pages/Register.jsx';
+import RegisterPage from '../modules/auth/pages/RegisterPage.jsx';
 import AdminLoginPage from '../modules/auth/pages/AdminLoginPage.jsx';
 
 // --- Customer Pages ---
@@ -34,6 +34,7 @@ import DriverDashboardPage from '../modules/courier/pages/DriverDashboardPage.js
 // --- Import Arrays of Routes from Modules ---
 import AdminRoutesArray from '../modules/admin/routes.jsx'; // Emërtoje ndryshe për qartësi
 import RestaurantOwnerRoutesArray from '../modules/restaurant/routes.jsx'; // Emërtoje ndryshe
+import CustomerRoutesArray from '../modules/customer/routes.jsx'; // Import customer routes array
 
 // Fallback loading component
 const LoadingFallback = () => (
@@ -43,86 +44,98 @@ const LoadingFallback = () => (
   </div>
 );
 
-// Fallback Page (404)
-const NotFoundPage = () => (
-    <div className="min-h-screen flex flex-col items-center justify-center text-center p-4 bg-gray-100 dark:bg-gray-900">
-        <h1 className="text-6xl font-bold text-primary-500 dark:text-primary-400 mb-4">404</h1>
-        <p className="text-2xl text-gray-700 dark:text-gray-300 mb-2">Oops! Faqja Nuk u Gjet.</p>
-        <p className="text-gray-500 dark:text-gray-400 mb-6">Faqja që po kërkoni mund të jetë hequr ose është përkohësisht e padisponueshme.</p>
-        <RouterLink to="/" className="px-6 py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 transition-colors">
-            Kthehu te Faqja Kryesore
-        </RouterLink>
-    </div>
-);
-
-const AppRoutes = () => {
+// Main Router Component
+const AppRouter = () => {
   return (
-    // <BrowserRouter> {/* SIGUROHU QË BrowserRouter është vetëm NJË HERË, idealisht te main.jsx */}
-      <Suspense fallback={<LoadingFallback />}>
-        <Routes>
-          {/* --- Authentication Routes --- */}
-          <Route element={<AuthLayout />}>
-            <Route path="/auth/login" element={<LoginPage />} />
-            <Route path="/auth/register" element={<RegisterPage />} />
-            <Route path="/auth/admin-login" element={<AdminLoginPage />} />
-          </Route>
+    <Suspense fallback={<LoadingFallback />}>
+      <Routes>
+        {/* Auth Routes */}
+        <Route path="/auth" element={<AuthLayout />}>
+          <Route path="login" element={<LoginPage />} />
+          <Route path="register" element={<RegisterPage />} />
+          <Route path="admin-login" element={<AdminLoginPage />} />
+          {/* Add other auth routes like forgot-password if needed */}
+          {/* <Route path="forgot-password" element={<ForgotPasswordPage />} /> */}
+          <Route index element={<Navigate to="login" replace />} />
+        </Route>
 
-          {/* --- Customer Routes --- */}
-          <Route path="/customer" element={<CustomerLayout />}>
-            <Route index element={<RestaurantListPage />} />
-            <Route path="restaurants" element={<RestaurantListPage />} />
-            <Route path="restaurants/:restaurantId" element={<RestaurantDetailPage />} />
-            <Route path="cart" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}> <CartPage /> </ProtectedRoute> }/>
-            <Route path="checkout" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}> <CheckoutPage /> </ProtectedRoute> }/>
-            <Route path="order-confirmation/:orderId" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}> <OrderConfirmationPage /> </ProtectedRoute> }/>
-            <Route path="my-orders" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}> <MyOrdersPage /> </ProtectedRoute> }/>
-            <Route path="profile" element={ <ProtectedRoute allowedRoles={['CUSTOMER', 'RESTAURANT_OWNER', 'DRIVER', 'ADMIN']}> <ProfilePage /> </ProtectedRoute> }/>
-          </Route>
+        {/* Customer Routes */}
+        <Route
+          path="/customer"
+          element={
+            <ProtectedRoute roles={['CUSTOMER', 'ADMIN']} redirectPath="/auth/login">
+              <CustomerLayout />
+            </ProtectedRoute>
+          }
+        >
+          {/* Render customer routes from the array */}
+          {CustomerRoutesArray}
+        </Route>
 
-          {/* --- Restaurant Owner Routes --- */}
-          <Route 
-            path="/restaurant/*" 
-            element={ 
-              <ProtectedRoute allowedRoles={['RESTAURANT_OWNER', 'ADMIN']}> 
-                <RestaurantOwnerLayout /> 
-              </ProtectedRoute> 
-            }
-          >
-            {/* Render each Route from the array */}
-            {RestaurantOwnerRoutesArray} 
-          </Route>
+        {/* Restaurant Owner Routes */}
+        <Route
+          path="/restaurant"
+          element={
+            <ProtectedRoute roles={['RESTAURANT_OWNER', 'ADMIN']} redirectPath="/auth/login">
+              <RestaurantOwnerLayout />
+            </ProtectedRoute>
+          }
+        >
+          {/* Render restaurant owner routes from the array */}
+          {RestaurantOwnerRoutesArray}
+        </Route>
 
-          {/* --- Courier/Driver Routes --- */}
-          <Route 
-            path="/driver/*" 
-            element={ 
-              <ProtectedRoute allowedRoles={['DRIVER', 'DELIVERY_PERSONNEL', 'ADMIN']}> 
-                <DriverLayout /> 
-              </ProtectedRoute> 
-            } 
-          >
-            <Route index element={<DriverDashboardPage />} />
-            <Route path="dashboard" element={<DriverDashboardPage />} />
-          </Route>
+        {/* Driver/Courier Routes */}
+        <Route
+          path="/driver"
+          element={
+            <ProtectedRoute roles={['DRIVER', 'DELIVERY_PERSONNEL', 'ADMIN']} redirectPath="/auth/login">
+              <DriverLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="dashboard" element={<DriverDashboardPage />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
+          {/* Add other driver-specific routes here if any */}
+        </Route>
 
-          {/* --- Admin Routes --- */}
-          <Route 
-            path="/admin/*" 
-            element={ 
-              <ProtectedRoute allowedRoles={['ADMIN']}> 
-                <AdminLayout /> 
-              </ProtectedRoute> 
-            }
-          >
-            {/* Render each Route from the array */}
-            {AdminRoutesArray}
-          </Route>
+        {/* Admin Routes */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute roles={['ADMIN']} redirectPath="/auth/admin-login">
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        >
+          {/* Render admin routes from the array */}
+          {AdminRoutesArray}
+        </Route>
 
-          <Route path="/" element={<Navigate to="/customer/restaurants" replace />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </Suspense>
-    // </BrowserRouter> {/* SIGUROHU QË BrowserRouter është vetëm NJË HERË */}
+        {/* Public/Fallback Routes */}
+        {/* Default redirect to customer restaurants page */}
+        <Route path="/" element={<Navigate to="/customer/restaurants" replace />} />
+        
+        {/* Catch-all 404 Not Found Page */}
+        <Route 
+          path="*" 
+          element={
+            <div className="flex flex-col justify-center items-center h-screen bg-gray-100 dark:bg-gray-900">
+              <h1 className="text-4xl font-bold text-primary-600 dark:text-primary-400 mb-4">404</h1>
+              <p className="text-xl text-gray-700 dark:text-gray-300 mb-8">Faqja nuk u gjet!</p>
+              <RouterLink 
+                to="/" 
+                className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+              >
+                Kthehu te Faqja Kryesore
+              </RouterLink>
+            </div>
+          } 
+        />
+      </Routes>
+    </Suspense>
   );
 };
-export default AppRoutes;
+
+// Export AppRouter directly. BrowserRouter should be in main.jsx or App.jsx.
+export default AppRouter;

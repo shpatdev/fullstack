@@ -10,10 +10,14 @@ from rest_framework import generics, permissions, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.views import APIView # Sigurohu që është importuar
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError # Sigurohu që janë importuar
+
 
 from .models import (
     User, Address, CuisineType, Restaurant, OperatingHours, 
-    MenuCategory, MenuItem, Order, OrderItem, Review, DriverProfile # Shto DriverProfile
+    MenuCategory, MenuItem, Order, OrderItem, Review, DriverProfile, # Shto DriverProfile
+    ReviewReply, PageViewLog # Shto ReviewReply dhe PageViewLog
 )
 from .serializers import (
     UserDetailSerializer, UserRegistrationSerializer, AddressSerializer,
@@ -21,7 +25,7 @@ from .serializers import (
     OperatingHoursSerializer, MenuCategorySerializer, MenuItemSerializer,
     CustomTokenObtainPairSerializer,
     OrderListSerializer, OrderDetailSerializer, OrderItemSerializer,
-    ReviewSerializer, DriverProfileSerializer # Shto DriverProfileSerializer
+    ReviewSerializer, DriverProfileSerializer, ReviewReplySerializer # Shto DriverProfileSerializer dhe ReviewReplySerializer
 )
 from .permissions import (
     IsOwnerOrAdmin, 
@@ -34,6 +38,8 @@ from .permissions import (
     IsDriverPermission, # SHTO KËTË IMPORT
     IsDriverOfOrderPermission # Shto edhe këtë nëse përdoret diku tjetër
 )
+from django.db.models import Count, Sum # Sigurohu që Sum është importuar
+
 
 User = get_user_model()
 
@@ -49,6 +55,30 @@ class UserRegistrationAPIView(generics.CreateAPIView):
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+
+class LogoutAPIView(APIView):
+    """
+    Endpoint për logout. Invalidon (shton në blacklist) refresh token-in e dhënë.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            refresh_token = request.data.get("refresh")
+            if refresh_token is None:
+                return Response({"detail": "Refresh token kërkohet."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            
+            return Response(status=status.HTTP_205_RESET_CONTENT)
+        except TokenError as e:
+            # Kthejmë një përgjigje më standarde për TokenError
+            return Response({"detail": "Token invalid ose i skaduar."}, status=status.HTTP_401_UNAUTHORIZED)
+        except Exception as e:
+            # Mund të shtosh logging më të mirë këtu për production
+            print(f"Logout error: {e}") 
+            return Response({"detail": "Gabim gjatë procesit të logout."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # ...
 class UserMeAPIView(generics.RetrieveUpdateAPIView):
@@ -192,21 +222,30 @@ class RestaurantViewSet(viewsets.ModelViewSet):
         return Restaurant.objects.filter(is_active=True, is_approved=True).order_by('name')
 
     def get_permissions(self):
-        # if self.action == 'list': # Nuk ka nevojë për këtë më, list e trajton vetë
-        #     return [permissions.AllowAny()]
-        if self.action in ['retrieve', 'menu_items_for_restaurant', 'menu_categories_for_restaurant']:
+        if self.action == 'list' or self.action == 'retrieve' or \
+           self.action == 'menu_items_for_restaurant' or \
+           self.action == 'menu_categories_for_restaurant':
+            # Këto veprime janë publike për të gjithë
             return [permissions.AllowAny()]
+        
         if self.action == 'create':
-            if self.request.user.is_authenticated and \
-               (self.request.user.role == User.Role.RESTAURANT_OWNER or self.request.user.is_staff):
-                return [permissions.IsAuthenticated()]
-            return [permissions.IsAdminUser()] 
+            # Për të krijuar një restorant, duhet të jesh i kyçur dhe të kesh rolin e duhur
+            # ose të jesh admin.
+            # Leja IsRestaurantOwnerOrAdmin do të kontrollojë rolin më tej nëse është IsAuthenticated.
+            # IsAdminUser është më specifik.
+            if self.request.user and self.request.user.is_authenticated:
+                if self.request.user.role == User.Role.RESTAURANT_OWNER or self.request.user.is_staff:
+                    # IsRestaurantOwnerOrAdmin do të lejojë pronarin ose adminin.
+                    # IsAuthenticated është mjaftueshëm këtu pasi IsRestaurantOwnerOrAdmin do të thirret më pas.
+                    return [permissions.IsAuthenticated(), IsRestaurantOwnerOrAdmin()] 
+            return [permissions.IsAdminUser()] # Nëse nuk plotësohen kushtet e mësipërme, vetëm admini
             
         if self.action == 'approve_restaurant':
-            return [permissions.IsAdminUser()] 
+            # Vetëm adminët mund të aprovojnë
+            return [permissions.IsAdminUser()]
         
-        # Për update, partial_update, destroy, toggle_active_status
-        # IsRestaurantOwnerOrAdmin do të kontrollojë pronësinë e objektit (restaurant.owner)
+        # Për veprimet e tjera si update, partial_update, destroy, toggle_active_status, etj.
+        # Kërkohet që përdoruesi të jetë i kyçur DHE të jetë pronari i restorantit ose admin.
         return [permissions.IsAuthenticated(), IsRestaurantOwnerOrAdmin()]
 
     # @method_decorator(cache_page(60 * 15)) # Hiq këtë
@@ -214,10 +253,11 @@ class RestaurantViewSet(viewsets.ModelViewSet):
         user = request.user
         # Cache vetëm për pamjet publike (përdorues të paautorizuar ose klientë)
         # Adminët dhe pronarët e restoranteve do të marrin gjithmonë të dhëna të freskëta për listat e tyre specifike.
+        
         is_public_view_eligible_for_cache = not user.is_authenticated or user.role == User.Role.CUSTOMER
 
         cache_key = None
-        if is_public_view_eligible_for_cache:
+        if is_public_view_eligible_for_cache: # TANI KJO VARIABËL EKZISTON
             cache_key = cache_utils.get_restaurants_list_public_cache_key(request)
             cached_response_data = cache.get(cache_key)
             if cached_response_data:
@@ -225,7 +265,6 @@ class RestaurantViewSet(viewsets.ModelViewSet):
                 return Response(cached_response_data)
             print(f"Cache MISS for Restaurants (public): {cache_key}")
 
-        # Merre queryset-in bazuar te përdoruesi (get_queryset e bën këtë)
         queryset = self.filter_queryset(self.get_queryset())
 
         page = self.paginate_queryset(queryset)

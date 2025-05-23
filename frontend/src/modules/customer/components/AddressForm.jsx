@@ -1,76 +1,81 @@
 // src/modules/customer/components/AddressForm.jsx
 import React, { useState, useEffect } from 'react';
+import Button from '../../../components/Button.jsx'; // Sigurohu që ky path është korrekt
 
-const AddressForm = ({ initialData = {}, onSubmit, onCancel, submitButtonText = "Save Address", isLoading = false }) => {
-    const [street, setStreet] = useState('');
-    const [city, setCity] = useState('');
-    const [zipCode, setZipCode] = useState('');
-    const [country, setCountry] = useState('');
-    const [isDefault, setIsDefault] = useState(false);
-    const [error, setError] = useState(''); // Local form error
+// Shto props: onSubmit, onCancel, isLoading, submitButtonText
+const AddressForm = ({ initialData = {}, onSubmit, onCancel, submitButtonText = "Ruaj Adresën", isLoading = false }) => {
+    const [formData, setFormData] = useState({
+        street: '',
+        city: '',
+        postal_code: '', // Përdor postal_code siç e pret backend-i
+        country: 'Kosovo', // Default
+        is_default_shipping: false,
+    });
+    const [error, setError] = useState('');
 
     useEffect(() => {
-        setStreet(initialData.street || '');
-        setCity(initialData.city || '');
-        setZipCode(initialData.zip_code || '');
-        setCountry(initialData.country || 'USA'); // Default country or from initialData
-        setIsDefault(initialData.is_default_shipping || false);
-        setError(''); // Clear error when initialData changes
+        setFormData({
+            street: initialData.street || '',
+            city: initialData.city || '',
+            postal_code: initialData.postal_code || initialData.zipCode || '', // Mbulo të dy rastet
+            country: initialData.country || 'Kosovo',
+            is_default_shipping: initialData.is_default_shipping || false,
+        });
+        setError(''); 
     }, [initialData]);
 
+    const handleChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        setFormData(prev => ({
+            ...prev,
+            [name]: type === 'checkbox' ? checked : value
+        }));
+        if(error) setError(''); // Clear error on change
+    };
 
-    const handleSubmit = async (e) => {
+    const handleSubmitLocal = async (e) => {
         e.preventDefault();
         setError(''); 
-        // Basic validation
-        if (!street.trim() || !city.trim() || !zipCode.trim() || !country.trim()) {
-            setError("All fields are required.");
+        if (!formData.street.trim() || !formData.city.trim() || !formData.postal_code.trim() || !formData.country.trim()) {
+            setError("Të gjitha fushat e adresës janë të detyrueshme.");
             return;
         }
-        try {
-            await onSubmit({ 
-                street, 
-                city, 
-                zip_code: zipCode, // Match backend field name
-                country, 
-                is_default_shipping: isDefault // Match backend field name
-            });
-            // Parent component (CheckoutPage) will handle success (e.g., closing form, re-fetching addresses)
-        } catch (err) {
-            setError(err.message || "Failed to save address. Please try again.");
+        // Thirr onSubmit të kaluar nga prindi (AddressFormModal -> CheckoutPage)
+        if (onSubmit) {
+            onSubmit(formData); 
         }
     };
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-4 p-4 border rounded-lg bg-gray-50 shadow">
-            {error && <p className="text-red-600 text-sm bg-red-100 p-2 rounded-md">{error}</p>}
+        <form onSubmit={handleSubmitLocal} className="space-y-4">
+            {error && <p className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/30 p-2 rounded-md">{error}</p>}
             <div>
-                <label htmlFor="address-street" className="block text-sm font-medium text-gray-700">Street Address</label>
-                <input type="text" name="street" id="address-street" value={street} onChange={(e) => setStreet(e.target.value)} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                <label htmlFor="address-street" className="label-form">Rruga</label>
+                <input type="text" name="street" id="address-street" value={formData.street} onChange={handleChange} required className="input-form w-full" />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <label htmlFor="address-city" className="block text-sm font-medium text-gray-700">City</label>
-                    <input type="text" name="city" id="address-city" value={city} onChange={(e) => setCity(e.target.value)} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                    <label htmlFor="address-city" className="label-form">Qyteti</label>
+                    <input type="text" name="city" id="address-city" value={formData.city} onChange={handleChange} required className="input-form w-full" />
                 </div>
                 <div>
-                    <label htmlFor="address-zipCode" className="block text-sm font-medium text-gray-700">ZIP / Postal Code</label>
-                    <input type="text" name="zipCode" id="address-zipCode" value={zipCode} onChange={(e) => setZipCode(e.target.value)} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                    <label htmlFor="address-postal_code" className="label-form">Kodi Postar</label>
+                    <input type="text" name="postal_code" id="address-postal_code" value={formData.postal_code} onChange={handleChange} required className="input-form w-full" />
                 </div>
             </div>
              <div>
-                <label htmlFor="address-country" className="block text-sm font-medium text-gray-700">Country</label>
-                <input type="text" name="country" id="address-country" value={country} onChange={(e) => setCountry(e.target.value)} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                <label htmlFor="address-country" className="label-form">Shteti</label>
+                <input type="text" name="country" id="address-country" value={formData.country} onChange={handleChange} required className="input-form w-full" />
             </div>
             <div className="flex items-center">
-                <input id="address-isDefault" name="isDefault" type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" />
-                <label htmlFor="address-isDefault" className="ml-2 block text-sm text-gray-900">Set as default shipping address</label>
+                <input id="address-is_default_shipping" name="is_default_shipping" type="checkbox" checked={formData.is_default_shipping} onChange={handleChange} className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 dark:border-slate-600 rounded" />
+                <label htmlFor="address-is_default_shipping" className="ml-2 block text-sm text-gray-900 dark:text-slate-200">Cakto si adresë primare</label>
             </div>
             <div className="flex justify-end space-x-3 pt-2">
-                {onCancel && <button type="button" onClick={onCancel} disabled={isLoading} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-70">Cancel</button>}
-                <button type="submit" disabled={isLoading} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50">
-                    {isLoading ? 'Saving...' : submitButtonText}
-                </button>
+                {onCancel && <Button type="button" variant="ghost" onClick={onCancel} disabled={isLoading}>Anulo</Button>}
+                <Button type="submit" variant="primary" isLoading={isLoading} disabled={isLoading}>
+                    {isLoading ? 'Duke Ruajtur...' : submitButtonText}
+                </Button>
             </div>
         </form>
     );

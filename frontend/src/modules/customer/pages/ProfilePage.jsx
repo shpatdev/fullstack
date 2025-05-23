@@ -1,14 +1,14 @@
 // src/modules/customer/pages/ProfilePage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../../context/AuthContext.jsx';
-import { customerApi } from '../../../api/customerApi.js'; // Përdor API reale
 import Button from '../../../components/Button.jsx';
-import HeroIcon from '../../../components/HeroIcon.jsx';
 import AddressForm from '../components/AddressForm.jsx';
 import { useNotification } from '../../../context/NotificationContext.jsx';
+import { UserCircleIcon, KeyIcon, MapPinIcon, PlusCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { customerApi } from '../../../api/customerApi.js';
 
 const ProfilePage = () => {
-  const { user, fetchAndSetUser, isLoading: authLoading, error: authError, setError: setAuthError, token } = useAuth(); // Shto token
+  const { user, fetchAndSetUser, isLoading: authLoading, error: authError, setError: setAuthError, token } = useAuth();
   const { showSuccess, showError } = useNotification();
 
   const initialProfileData = { username: '', email: '', first_name: '', last_name: '', phone_number: '', bio: '', profile_picture_url_placeholder: '' };
@@ -141,7 +141,10 @@ const ProfilePage = () => {
   };
   
   // Import apiService nëse e përdor direkt
-  const apiService = { request: async (url, options) => { /* ... implementimi yt i apiService ... */ } }; // Placeholder, duhet ta importosh nga /api/apiService.js
+  // Ensure apiService is properly imported if used directly, or remove this placeholder if not.
+  // For now, assuming it's needed for handleProfileUpdate and handlePasswordUpdate.
+  // If those use a global apiService instance, this local one might be conflicting or unnecessary.
+  // const apiService = { request: async (url, options) => { /* ... implementimi yt i apiService ... */ } }; // Placeholder, duhet ta importosh nga /api/apiService.js
 
 
   if (authLoading && !user) {
@@ -159,7 +162,7 @@ const ProfilePage = () => {
         <div className="lg:col-span-2 space-y-8">
           <form onSubmit={handleProfileUpdate} className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8">
             <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-5 border-b border-gray-200 dark:border-slate-700 pb-3 flex items-center">
-              <HeroIcon icon="UserCircleIcon" className="h-6 w-6 mr-2.5 text-primary-500" /> Informacionet Personale
+              <UserCircleIcon className="h-6 w-6 mr-2.5 text-primary-500" /> Informacionet Personale
             </h2>
             {authError && <p className="text-sm text-red-500 dark:text-red-400 mb-4 bg-red-50 dark:bg-red-900/30 p-3 rounded-md">{authError}</p>}
             <div className="space-y-4">
@@ -198,7 +201,7 @@ const ProfilePage = () => {
 
           <form onSubmit={handlePasswordUpdate} className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8">
             <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-5 border-b border-gray-200 dark:border-slate-700 pb-3 flex items-center">
-              <HeroIcon icon="KeyIcon" className="h-6 w-6 mr-2.5 text-primary-500" /> Ndrysho Fjalëkalimin
+              <KeyIcon className="h-6 w-6 mr-2.5 text-primary-500" /> Ndrysho Fjalëkalimin
             </h2>
             <div className="space-y-4">
               <div>
@@ -223,7 +226,7 @@ const ProfilePage = () => {
         <div className="lg:col-span-1 space-y-6">
            <section className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8">
             <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-1 flex items-center border-b border-gray-200 dark:border-slate-700 pb-3">
-              <HeroIcon icon="MapPinIcon" className="h-6 w-6 mr-2.5 text-primary-500" /> Adresat e Mia
+              <MapPinIcon className="h-6 w-6 mr-2.5 text-primary-500" /> Adresat e Mia
             </h2>
             {isLoadingAddresses && <div className="text-center py-4"><div className="animate-spin rounded-full h-6 w-6 border-t-2 border-gray-400 mx-auto"></div></div>}
             {!isLoadingAddresses && addresses.length > 0 && !showAddressForm && (
@@ -248,8 +251,13 @@ const ProfilePage = () => {
             )}
              {!isLoadingAddresses && addresses.length === 0 && !showAddressForm && (<p className="text-sm text-gray-500 dark:text-slate-400 mt-4 py-4 text-center">Nuk keni adresa të ruajtura.</p>)}
 
-            <Button variant={showAddressForm ? "danger" : "outline"} size="md" onClick={() => { setShowAddressForm(!showAddressForm); setEditingAddress(null); }} 
-                className="mt-5 w-full" iconLeft={showAddressForm ? <HeroIcon icon="XMarkIcon" className="h-5 w-5"/> : <HeroIcon icon="PlusCircleIcon" className="h-5 w-5"/>}>
+            <Button
+              variant={showAddressForm ? "danger" : "outline"}
+              size="md"
+              onClick={() => { setShowAddressForm(prev => !prev); setEditingAddress(null); }}
+              className="mt-5 w-full"
+              iconLeft={showAddressForm ? <XMarkIcon className="h-5 w-5"/> : <PlusCircleIcon className="h-5 w-5"/>}
+            >
               {showAddressForm ? (editingAddress ? 'Anulo Modifikimin' : 'Anulo Shto Adresë') : 'Shto Adresë të Re'}
             </Button>
 

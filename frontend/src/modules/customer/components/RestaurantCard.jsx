@@ -1,13 +1,15 @@
 // filepath: frontend/src/modules/customer/components/RestaurantCard.jsx
 import React from 'react';
 import { Link } from 'react-router-dom';
-import HeroIcon from '../../../components/HeroIcon.jsx'; // Added import
-
-// Removed inline ChevronRightIcon definition if it was here
+import { ChevronRightIcon } from '@heroicons/react/24/solid'; // New import for ChevronRightIcon
 
 const RestaurantCard = ({ restaurant }) => {
   // Fallback image if restaurant.image is not available
   const imageUrl = restaurant.image || 'https://placehold.co/600x400/E2E8F0/A0AEC0?text=Restaurant';
+
+  const ratingValue = restaurant.average_rating !== null && restaurant.average_rating !== undefined 
+                      ? parseFloat(restaurant.average_rating) 
+                      : null;
 
   return (
     <Link
@@ -35,12 +37,14 @@ const RestaurantCard = ({ restaurant }) => {
         
         <div className="mt-auto pt-2 border-t border-gray-100">
             <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                <span>Rating: {restaurant.average_rating?.toFixed(1) || 'N/A'} ★</span>
+                <span>Rating: {ratingValue !== null && !isNaN(ratingValue) ? ratingValue.toFixed(1) : 'N/A'} ★</span>
                 <span>{restaurant.delivery_time_estimate || 'N/A'}</span>
             </div>
-            <div className="flex items-center justify-between text-sm text-indigo-600 group-hover:text-indigo-700 font-medium mt-1">
-                <span>View Menu</span>
-                <HeroIcon name="chevron-right" className="w-5 h-5" />
+            <div className="mt-auto pt-3">
+              <span className="inline-flex items-center text-sm font-medium text-primary-600 dark:text-primary-400 group-hover:text-primary-700 dark:group-hover:text-primary-300">
+                Shiko Menunë
+                <ChevronRightIcon className="ml-1 h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+              </span>
             </div>
         </div>
       </div>

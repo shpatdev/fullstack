@@ -4,9 +4,9 @@ import { useOutletContext } from 'react-router-dom'; // Added
 import { restaurantApi } from '../../../api/restaurantApi';
 import { useAuth } from '../../../context/AuthContext';
 import { useNotification } from '../../../context/NotificationContext';
-import Button from '../../../components/Button';
-import HeroIcon from '../../../components/HeroIcon';
-import OrderTableRow from '../components/OrderTableRow';
+import Button from "../../../components/Button";
+import { ArrowPathIcon, ShoppingCartIcon, FunnelIcon, MagnifyingGlassIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'; // EyeIcon will be in OrderTableRow
+import OrderTableRow from "../components/OrderTableRow";
 import OrderDetailModal from '../components/OrderDetailModal';
 import ConfirmationModal from '../../../components/ConfirmationModal';
 
@@ -109,14 +109,62 @@ const ManageOrdersPage = () => {
     return order.status === activeFilter;
   }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+
+  const handleSearchAndFilter = () => {
+    // This function can be used to trigger search and filter manually if needed
+    fetchOrders(1);
+  };
+
   return (
     <div className="container mx-auto">
       <div className="mb-6 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white">Menaxho Porositë</h1>
-        <Button variant="outline" onClick={fetchOrders} isLoading={isLoading} disabled={isLoading}
-                iconLeft={<HeroIcon icon="ArrowPathIcon" className={`h-4 w-4 ${isLoading ? 'animate-spin': ''}`}/>}>
-          Rifresko
+        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white flex items-center">
+            <ShoppingCartIcon className="h-7 w-7 mr-2 text-primary-600 dark:text-primary-400" />
+            Menaxho Porositë
+        </h1>
+        <Button onClick={() => fetchOrders(1)} variant="outline" iconLeft={ArrowPathIcon} isLoading={isLoading} disabled={isLoading}>
+            Rifresko Porositë
         </Button>
+      </div>
+
+      {/* Search and Filter Bar */}
+      <div className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow-md">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div className="relative md:col-span-2">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 dark:text-slate-500" />
+            </div>
+            <input
+              type="text"
+              placeholder="Kërko (ID porosie, klient)..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onBlur={() => fetchOrders(1)}
+              className="input-form w-full pl-10"
+            />
+          </div>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FunnelIcon className="h-5 w-5 text-gray-400 dark:text-slate-500" />
+            </div>
+            <select
+              value={filterStatus}
+              onChange={(e) => {setFilterStatus(e.target.value); fetchOrders(1);}}
+              className="input-form w-full pl-10"
+            >
+              <option value="">Të gjitha Statuset</option>
+              <option value="PENDING">Në Pritje</option>
+              <option value="CONFIRMED">Konfirmuar</option>
+              <option value="PREPARING">Në Përgatitje</option>
+              <option value="READY_FOR_PICKUP">Gati për Marrje</option>
+              <option value="OUT_FOR_DELIVERY">Në Dërgesë</option>
+              <option value="DELIVERED">Dorëzuar</option>
+              <option value="CANCELLED">Anuluar</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md">
@@ -140,7 +188,13 @@ const ManageOrdersPage = () => {
         <div className="flex justify-center items-center py-10"><div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-primary-500"></div></div>
       )}
       
-      {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 dark:bg-red-700/20 dark:text-red-300 p-4 rounded-md" role="alert"><p className="font-bold">Gabim:</p><p>{error}</p></div>}
+      {error && !isLoading && orders.length === 0 && (
+        <div className="p-4 bg-red-50 dark:bg-red-900/30 rounded-md text-red-700 dark:text-red-200 flex items-center">
+            <ExclamationTriangleIcon className="h-6 w-6 mr-2 flex-shrink-0" />
+            <p>{error}</p>
+            <Button onClick={() => fetchOrders(1)} variant="outline" size="sm" className="ml-auto">Provo Përsëri</Button>
+        </div>
+      )}
 
       {!isLoading && !error && (
         <div className="bg-white dark:bg-gray-800 shadow-xl rounded-lg overflow-x-auto">

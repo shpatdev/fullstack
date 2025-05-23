@@ -1,29 +1,31 @@
 // src/modules/customer/pages/CheckoutPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useCart } from '../../../context/CartContext.jsx';
-import { useAuth } from '../../../context/AuthContext.jsx';
-import { customerApi } from '../../../api/customerApi.js';
-import { useNotification } from '../../../context/NotificationContext.jsx';
-import Button from '../../../components/Button.jsx';
-import HeroIcon from '../../../components/HeroIcon.jsx';
-import AddressForm from '../components/AddressForm.jsx';
-import OrderSummaryCard from '../components/OrderSummaryCard.jsx';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useCart } from "../../../context/CartContext.jsx";
+import { useAuth } from "../../../context/AuthContext.jsx";
+import { customerApi } from "../../../api/customerApi.js";
+import { useNotification } from "../../../context/NotificationContext.jsx";
+import Button from "../../../components/Button.jsx";
+import { MapPinIcon, PlusCircleIcon, CreditCardIcon, InformationCircleIcon, ShoppingCartIcon, XMarkIcon, ArrowPathIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import AddressFormModal from '../components/AddressFormModal.jsx';
 
 const CheckoutPage = () => {
-  const { cart, clearCart, fetchCart: refetchCartContext } = useCart(); // Merr clearCart dhe refetchCartContext
+  const { cart, clearCart, getCartTotal, getCartItemsCount } = useCart(); // Merr clearCart dhe refetchCartContext
   const { user, token } = useAuth(); // Merr token
   const { showSuccess, showError } = useNotification();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [addresses, setAddresses] = useState([]);
   const [selectedAddressId, setSelectedAddressId] = useState('');
-  const [showAddressForm, setShowAddressForm] = useState(false);
+  // const [showAddressForm, setShowAddressForm] = useState(false); // Zëvendësohet
+  const [showAddressFormModal, setShowAddressFormModal] = useState(false); // SHTO KËTË
   const [editingAddress, setEditingAddress] = useState(null);
-  const [paymentMethod, setPaymentMethod] = useState('CASH_ON_DELIVERY');
   const [isLoadingAddresses, setIsLoadingAddresses] = useState(true); // Ndryshuar emri
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [deliveryNotes, setDeliveryNotes] = useState(''); // Për shënimet e dërgesës
+  const [isLoadingOrder, setIsLoadingOrder] = useState(false);
+
 
   const fetchAddresses = useCallback(async () => {
     if (!user?.id || !token) {
@@ -40,7 +42,7 @@ const CheckoutPage = () => {
       } else if (userAddresses.length > 0) {
         setSelectedAddressId(userAddresses[0].id.toString());
       } else {
-        setShowAddressForm(true); // Hap formularin nëse nuk ka adresa
+        setShowAddressFormModal(true); // Hap formularin nëse nuk ka adresa
       }
     } catch (error) {
       showError(error.message || "Nuk mund të ngarkoheshin adresat.");
@@ -50,21 +52,70 @@ const CheckoutPage = () => {
   }, [user?.id, token, showError]);
 
   useEffect(() => {
-    if (cart.items.length === 0 && !isPlacingOrder) {
-      showError("Shporta është bosh. Shtoni artikuj.");
-      navigate('/customer/cart');
+    if (user) {
+      fetchAddresses();
     } else {
-        fetchAddresses();
+      setIsLoadingAddresses(false);
+      // Consider redirecting to login or showing a message if user is not logged in
     }
-  }, [cart.items.length, navigate, showError, fetchAddresses, isPlacingOrder]);
+  }, [user, fetchAddresses]);
+  
+  useEffect(() => {
+    // Pre-select the default shipping address if available
+    const defaultAddress = addresses.find(addr => addr.is_default_shipping);
+    if (defaultAddress) {
+      setSelectedAddressId(defaultAddress.id.toString());
+    } else if (addresses.length > 0) {
+      setSelectedAddressId(addresses[0].id.toString()); // Select the first one if no default
+    }
+  }, [addresses]);
 
-  const handleAddressSave = (savedAddress) => {
-    fetchAddresses();
-    setSelectedAddressId(savedAddress.id.toString());
-    setShowAddressForm(false);
-    setEditingAddress(null);
+
+  const handleAddressSaveViaModal = async (addressDataFromForm, addressIdToUpdate = null) => {
+    setIsLoadingAddresses(true); // Ose një state të veçantë për ruajtjen e adresës
+    try {
+        let savedAddress;
+        if (addressIdToUpdate) {
+            savedAddress = await customerApi.updateUserAddress(addressIdToUpdate, addressDataFromForm);
+            showSuccess("Adresa u përditësua me sukses!");
+        } else {
+            savedAddress = await customerApi.createUserAddress(addressDataFromForm);
+            showSuccess("Adresa u shtua me sukses!");
+        }
+        fetchAddresses(); // Rifresko listën e adresave
+        setSelectedAddressId(savedAddress.id.toString()); // Zgjidh adresën e re/përditësuar
+        setShowAddressFormModal(false); // Mbyll modalin
+        setEditingAddress(null);
+    } catch (error) {
+        showError(error.message || "Gabim gjatë ruajtjes së adresës.");
+    } finally {
+        setIsLoadingAddresses(false);
+    }
   };
 
+  const handleEditAddress = (address) => {
+    setEditingAddress(address);
+    setShowAddressFormModal(true);
+  };
+
+  const handleDeleteAddress = async (addressId) => {
+    if (window.confirm("Jeni i sigurt që dëshironi të fshini këtë adresë?")) {
+      setIsLoadingAddresses(true);
+      try {
+        await customerApi.deleteUserAddress(addressId);
+        showSuccess("Adresa u fshi me sukses!");
+        fetchAddresses(); // Refresh list
+        if (selectedAddressId === addressId.toString()) {
+          setSelectedAddressId(''); // Clear selection if deleted address was selected
+        }
+      } catch (error) {
+        showError(error.message || "Gabim gjatë fshirjes së adresës.");
+      } finally {
+        setIsLoadingAddresses(false);
+      }
+    }
+  };
+  
   const handlePlaceOrder = async () => {
     if (cart.items.length === 0) {
         showError("Shporta është bosh.");
@@ -72,10 +123,6 @@ const CheckoutPage = () => {
     }
     if (!selectedAddressId) {
       showError("Ju lutem zgjidhni ose shtoni një adresë dërgese.");
-      return;
-    }
-    if (!paymentMethod) {
-      showError("Ju lutem zgjidhni një metodë pagese.");
       return;
     }
     
@@ -93,6 +140,7 @@ const CheckoutPage = () => {
     }
 
     setIsPlacingOrder(true);
+    setIsLoadingOrder(true); // Shto këtë linjë
     try {
       const orderPayload = {
         restaurant_id: parseInt(restaurantId), // Sigurohu që është integer
@@ -122,64 +170,112 @@ const CheckoutPage = () => {
   const subtotal = cart.items.reduce((sum, item) => sum + parseFloat(item.menu_item_details?.price || 0) * item.quantity, 0);
   const total = subtotal + deliveryFee;
 
+  if (!user) {
+    return (
+      <div className="container mx-auto px-4 py-8 text-center">
+        <InformationCircleIcon className="h-12 w-12 text-primary-500 mx-auto mb-4" />
+        <h1 className="text-2xl font-semibold mb-2">Ju lutem identifikohuni</h1>
+        <p className="text-gray-600 dark:text-slate-300 mb-6">Për të vazhduar me porosinë, ju duhet të identifikoheni ose të krijoni një llogari.</p>
+        <Button onClick={() => navigate('/login', { state: { from: location }})} variant="primary" size="lg">
+          Identifikohu
+        </Button>
+      </div>
+    );
+  }
+
+  if (cart.length === 0 && !isLoadingOrder) {
+    return (
+      <div className="container mx-auto py-10 text-center">
+        <ShoppingCartIcon className="h-20 w-20 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
+        <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-2">Shporta juaj është bosh.</h2>
+        <p className="text-gray-500 dark:text-slate-400 mb-6">Ju lutem shtoni artikuj në shportë para se të vazhdoni me pagesën.</p>
+        <Button onClick={() => navigate('/customer/restaurants')} variant="primary">
+          Kthehu te Restorantet
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="container mx-auto px-2 sm:px-0 py-6 md:py-8">
-      <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-800 dark:text-white mb-6 md:mb-8">Pagesa</h1>
+    <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
+      <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white mb-6 sm:mb-8 text-center">Përfundo Porosinë</h1>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 items-start">
-        <div className="lg:col-span-2 space-y-6 md:space-y-8">
-          <section className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8">
-            <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-1 flex items-center">
-              <HeroIcon icon="MapPinIcon" className="h-6 w-6 mr-2.5 text-primary-500" /> Adresa e Dërgesës
+      {isLoadingOrder && (
+        <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 p-8 rounded-lg shadow-xl text-center">
+            <ArrowPathIcon className="h-12 w-12 text-primary-500 animate-spin mx-auto mb-4" />
+            <p className="text-lg font-semibold text-gray-700 dark:text-slate-200">Duke procesuar porosinë...</p>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+        {/* Order Summary - Left Column (or Top on Mobile) */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Shipping Address Section */}
+          <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 sm:p-6">
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-4 flex items-center">
+              <MapPinIcon className="h-6 w-6 mr-2 text-primary-500" /> Adresa e Dërgesës
             </h2>
-            {isLoadingAddresses && <div className="py-4 text-center"><div className="animate-spin rounded-full h-6 w-6 border-t-2 border-gray-400 mx-auto"></div></div>}
-            {!isLoadingAddresses && addresses.length > 0 && !showAddressForm && (
-              <div className="space-y-3 mt-4 max-h-72 overflow-y-auto custom-scrollbar-thin pr-2">
-                {addresses.map(addr => (
-                  <div key={addr.id} 
-                       className={`p-3 sm:p-4 border rounded-lg cursor-pointer transition-all
-                                   ${selectedAddressId === addr.id.toString() ? 'border-primary-500 ring-2 ring-primary-500/70 bg-primary-50 dark:bg-primary-500/10 dark:border-primary-500' : 'border-gray-300 dark:border-slate-600 hover:border-primary-400 dark:hover:border-primary-500/70'}`}
-                       onClick={() => setSelectedAddressId(addr.id.toString())}>
+            {isLoadingAddresses && <ArrowPathIcon className="h-6 w-6 animate-spin text-primary-500 my-4" />}
+            {!isLoadingAddresses && addresses.length === 0 && !showAddressFormModal && (
+              <p className="text-gray-500 dark:text-slate-400">Nuk keni adresa të ruajtura.</p>
+            )}
+            {!isLoadingAddresses && addresses.length > 0 && (
+              <div className="space-y-3 mb-4">
+                {addresses.map((address) => (
+                  <div 
+                    key={address.id} 
+                    className={`p-3 border rounded-lg cursor-pointer transition-all
+                                ${selectedAddressId === address.id.toString() ? 'border-primary-500 ring-2 ring-primary-500 bg-primary-50 dark:bg-primary-500/10' : 'border-gray-300 dark:border-slate-700 hover:border-primary-300 dark:hover:border-primary-600'}`}
+                    onClick={() => setSelectedAddressId(address.id.toString())}
+                  >
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="font-semibold text-sm text-gray-800 dark:text-slate-100">{addr.street}</p>
-                            <p className="text-xs text-gray-600 dark:text-slate-300">{addr.city}, {addr.postal_code}, {addr.country}</p>
+                            <p className="font-medium text-gray-800 dark:text-slate-100">{address.street}</p>
+                            <p className="text-sm text-gray-600 dark:text-slate-300">{address.city}, {address.postal_code}</p>
+                            <p className="text-xs text-gray-500 dark:text-slate-400">{address.country}</p>
                         </div>
-                        {addr.is_default_shipping && <span className="text-xs bg-green-100 text-green-700 dark:bg-green-600/30 dark:text-green-200 px-2 py-0.5 rounded-full font-medium">Primare</span>}
+                        <div className="flex-shrink-0 space-x-1">
+                            <Button variant="icon" size="sm" onClick={(e) => { e.stopPropagation(); handleEditAddress(address);}} title="Modifiko">
+                                <PencilIcon className="h-4 w-4 text-blue-500"/>
+                            </Button>
+                            <Button variant="icon" size="sm" onClick={(e) => { e.stopPropagation(); handleDeleteAddress(address.id);}} title="Fshij">
+                                <TrashIcon className="h-4 w-4 text-red-500"/>
+                            </Button>
+                        </div>
                     </div>
-                    <button onClick={(e) => { e.stopPropagation(); setEditingAddress(addr); setShowAddressForm(true);}} className="text-xs text-primary-600 hover:underline dark:text-primary-400 mt-1.5">Modifiko</button>
+                    {address.is_default_shipping && (
+                      <span className="mt-1 inline-block text-xs bg-blue-100 text-blue-700 dark:bg-blue-700 dark:text-blue-200 px-1.5 py-0.5 rounded-full">Primare</span>
+                    )}
                   </div>
                 ))}
               </div>
             )}
-            {(!isLoadingAddresses && addresses.length === 0 && !showAddressForm) && <p className="text-sm text-gray-500 dark:text-slate-400 mt-4 py-4 text-center">Nuk keni adresa të ruajtura.</p>}
-            
-            <Button variant={showAddressForm ? "danger" : "outline"} size="md" onClick={() => { setShowAddressForm(!showAddressForm); setEditingAddress(null); }} className="mt-5 w-full sm:w-auto"
-                iconLeft={showAddressForm ? <HeroIcon icon="XMarkIcon" className="h-5 w-5"/> : <HeroIcon icon="PlusCircleIcon" className="h-5 w-5"/>}>
-              {showAddressForm ? (editingAddress ? 'Anulo Modifikimin' : 'Anulo Shto Adresë') : 'Shto Adresë të Re'}
+            <Button 
+                variant={showAddressFormModal ? "danger" : "outline"} 
+                size="md" 
+                onClick={() => { setShowAddressFormModal(!showAddressFormModal); setEditingAddress(null); }} 
+                className="mt-1 w-full sm:w-auto"
+                iconLeft={showAddressFormModal ? <XMarkIcon className="h-5 w-5"/> : <PlusCircleIcon className="h-5 w-5"/>}
+            >
+              {showAddressFormModal ? (editingAddress ? 'Anulo Modifikimin' : 'Anulo Shto Adresë') : 'Shto Adresë të Re'}
             </Button>
 
-            {showAddressForm && (
-              <div className="mt-5 border-t border-gray-200 dark:border-slate-700 pt-5">
-                <h3 className="text-md font-medium text-gray-700 dark:text-slate-300 mb-3">{editingAddress ? 'Modifiko Adresën' : 'Shto Adresë të Re'}</h3>
-                <AddressForm existingAddress={editingAddress} onSave={handleAddressSave} onCancel={() => { setShowAddressForm(false); setEditingAddress(null);}} userId={user.id} />
-              </div>
-            )}
-          </section>
+            {/* Nuk ka më AddressForm direkt këtu, por AddressFormModal */}
+            <AddressFormModal
+                isOpen={showAddressFormModal}
+                onClose={() => { setShowAddressFormModal(false); setEditingAddress(null); }}
+                onSaveAddress={handleAddressSaveViaModal} // Ky thërret API-në
+                existingAddress={editingAddress}
+                // userId={user.id} // Nuk nevojitet pasi API call bëhet këtu
+            />
+          </div>
 
-          <section className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8">
-             <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-1 flex items-center">
-                <HeroIcon icon="QuestionMarkCircleIcon" className="h-6 w-6 mr-2.5 text-primary-500" /> Shënime për Dërgesën (Opsionale)
-            </h2>
-            <div className="mt-4">
-                <textarea id="deliveryNotes" name="deliveryNotes" rows="3" value={deliveryNotes} onChange={(e) => setDeliveryNotes(e.target.value)}
-                          className="input-form w-full" placeholder="P.sh. Lëreni te dera, mos bini ziles, etj."></textarea>
-            </div>
-          </section>
-
-          <section className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8">
-            <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-1 flex items-center">
-              <HeroIcon icon="CreditCardIcon" className="h-6 w-6 mr-2.5 text-primary-500" /> Metoda e Pagesës
+          {/* Payment Method Section */}
+          <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 sm:p-6">
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-4 flex items-center">
+              <CreditCardIcon className="h-6 w-6 mr-2.5 text-primary-500 dark:text-primary-400" /> Metoda e Pagesës
             </h2>
             <div className="mt-4 space-y-3">
               <div onClick={() => setPaymentMethod('CASH_ON_DELIVERY')}
@@ -203,15 +299,64 @@ const CheckoutPage = () => {
                 </div>
               </div>
             </div>
-          </section>
+          </div>
         </div>
 
+        {/* Cart Details - Right Column (or Bottom on Mobile) */}
         <div className="lg:col-span-1">
-          <OrderSummaryCard
-            subtotal={subtotal} deliveryFee={deliveryFee} total={total} itemCount={cart.items.length}
-            buttonText="Përfundo Porosinë" onButtonClick={handlePlaceOrder}
-            isLoading={isPlacingOrder} disabled={isPlacingOrder || !selectedAddressId || cart.items.length === 0 || isLoadingAddresses}
-          />
+          <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 sm:p-6 sticky top-24">
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-4 flex items-center">
+              <ShoppingCartIcon className="h-6 w-6 mr-2 text-primary-500" /> Përmbledhja e Shportës
+            </h2>
+            <div className="space-y-4">
+              {cart.items.length === 0 ? (
+                <p className="text-center text-gray-500 dark:text-slate-400 py-4">Shporta juaj është bosh.</p>
+              ) : (
+                cart.items.map(item => (
+                  <div key={item.id} className="flex justify-between items-center p-3 sm:p-4 border-b border-gray-200 dark:border-slate-700">
+                    <div className="flex items-center">
+                      <img src={item.menu_item_details?.image_url} alt={item.menu_item_details?.name} className="w-16 h-16 object-cover rounded-md mr-3" />
+                      <div>
+                        <p className="text-sm font-medium text-gray-800 dark:text-slate-200">{item.menu_item_details?.name}</p>
+                        <p className="text-xs text-gray-500 dark:text-slate-400">{item.quantity}x - {parseFloat(item.menu_item_details?.price).toFixed(2)}€</p>
+                      </div>
+                    </div>
+                    <div className="flex-shrink-0">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">{(item.quantity * parseFloat(item.menu_item_details?.price)).toFixed(2)}€</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+              <div className="flex justify-between text-sm font-medium text-gray-700 dark:text-slate-300">
+                <span>Subtotal ({cart.items.length} artikuj)</span>
+                <span>{subtotal.toFixed(2)}€</span>
+              </div>
+              <div className="flex justify-between text-sm font-medium text-gray-700 dark:text-slate-300">
+                <span>Taksat dhe Tarifet</span>
+                <span>0.00€</span>
+              </div>
+              <div className="flex justify-between text-sm font-medium text-gray-700 dark:text-slate-300">
+                <span>Tarifa e Dërgesës</span>
+                <span>{deliveryFee.toFixed(2)}€</span>
+              </div>
+              <div className="flex justify-between text-lg font-semibold text-gray-800 dark:text-slate-200 mt-2">
+                <span>Total</span>
+                <span>{total.toFixed(2)}€</span>
+              </div>
+            </div>
+            <Button 
+              onClick={handlePlaceOrder} 
+              variant="primary" 
+              size="lg" 
+              className="mt-4 w-full"
+              isLoading={isPlacingOrder}
+              disabled={isPlacingOrder || !selectedAddressId || cart.items.length === 0 || isLoadingAddresses}
+            >
+              {isPlacingOrder ? 'Duke përfunduar...' : 'Përfundo Porosinë'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

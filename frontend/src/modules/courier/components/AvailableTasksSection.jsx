@@ -1,105 +1,113 @@
 // src/modules/courier/components/AvailableTasksSection.jsx
-import React, { useEffect, useCallback } from 'react'; // Shtuar useCallback
-import Button from '../../../components/Button.jsx';
-import HeroIcon from '../../../components/HeroIcon.jsx';
-import { useTasks } from '../../../context/TaskContext.jsx';
-import { useAuth } from '../../../context/AuthContext.jsx'; // Nuk nevojitet më këtu pasi TaskContext e menaxhon userin
+import React, { useEffect, useCallback } from "react";
+import Button from "../../../components/Button.jsx";
+// import HeroIcon from "../../../components/HeroIcon.jsx"; // FSHIJE KËTË
+import { BuildingStorefrontIcon, MapIcon, MapPinIcon, CurrencyDollarIcon as CurrencyEuroIcon, CheckCircleIcon, ArrowPathIcon, InboxIcon } from '@heroicons/react/24/outline';
+import { useTasks } from "../../../context/TaskContext.jsx";
+import { useAuth } from "../../../context/AuthContext.jsx";
 
 const AvailableTasksSection = () => {
-  const { 
-    availableTasks, 
-    acceptTask, 
-    fetchAvailableTasks, 
-    isDriverOnline, 
-    activeTask,
-    isLoadingAvailableTasks, // Nga contexti i ri
-    isLoadingAcceptTask,     // Nga contexti i ri
-    taskIdBeingAccepted    // Nga contexti i ri
-  } = useTasks();
-  // const { user } = useAuth(); // Nuk nevojitet më këtu
+  const { availableTasks, fetchAvailableTasks, acceptTask, isLoadingAccept, errorAccept } = useTasks();
+  const { user } = useAuth(); // To ensure courier is available
 
-  // useEffect për rifreskim periodik
-  useEffect(() => {
-    if (isDriverOnline) {
-      // fetchAvailableTasks(); // Thirrja fillestare bëhet nga useEffect kryesor te TaskContext
-      const intervalId = setInterval(() => {
-        if (!activeTask) { // Rifresko vetëm nëse nuk ka detyrë aktive
-            fetchAvailableTasks();
-        }
-      }, 30000); // Rifresko çdo 30 sekonda
-      return () => clearInterval(intervalId);
+  const loadTasks = useCallback(() => {
+    if (user?.is_available_for_delivery) { // Only fetch if courier is available
+      fetchAvailableTasks();
     }
-  }, [isDriverOnline, fetchAvailableTasks, activeTask]);
+  }, [fetchAvailableTasks, user?.is_available_for_delivery]);
 
+  useEffect(() => {
+    loadTasks();
+    // Optional: Set up an interval to refresh tasks periodically
+    // const intervalId = setInterval(loadTasks, 30000); // Refresh every 30 seconds
+    // return () => clearInterval(intervalId);
+  }, [loadTasks]);
 
-  const handleAcceptTaskClick = (taskId) => {
-    // acceptTask te TaskContext tashmë e di shoferin nga user-i i AuthContext
-    acceptTask(taskId);
-  };
-
-  const TaskCard = ({ task }) => (
-    // Supozojmë se 'task' objekti këtu ka fushat: id, restaurant_details.name, 
-    // restaurant_details.address, delivery_address_street, delivery_address_city, total_amount
-    // Këto vijnë nga transformTaskDataForFrontend te TaskContext
-    <div className="bg-white dark:bg-slate-800 shadow-lg rounded-lg p-5 hover:shadow-xl transition-shadow border border-gray-200 dark:border-slate-700 flex flex-col justify-between">
-      <div>
-        <div className="flex justify-between items-start mb-3">
-            <h4 className="text-lg font-semibold text-primary-700 dark:text-primary-400">Porosi #{task.id}</h4>
-            <span className="px-2 py-1 text-xs font-semibold text-green-800 bg-green-100 dark:text-green-100 dark:bg-green-600/30 rounded-full">
-            Gati për Marrje
-            </span>
-        </div>
-        <div className="mb-3 space-y-1.5 text-sm text-gray-700 dark:text-slate-300">
-            <p className="flex items-start"> {/* Ndryshuar në items-start për tekste të gjata */}
-                <HeroIcon icon="BuildingStorefrontIcon" className="h-4 w-4 mt-0.5 mr-2 text-gray-400 dark:text-slate-500 flex-shrink-0" />
-                <span className="font-medium mr-1">Nga:</span> <span className="truncate" title={task.restaurant_details?.name}>{task.restaurant_details?.name || 'N/A'}</span>
-            </p>
-            <p className="flex items-start">
-                <HeroIcon icon="MapIcon" className="h-4 w-4 mt-0.5 mr-2 text-gray-400 dark:text-slate-500 flex-shrink-0" />
-                <span className="font-medium mr-1">Adresa Rest.:</span> <span title={task.restaurant_details?.address}>{task.restaurant_details?.address || 'N/A'}</span>
-            </p>
-            <p className="flex items-start">
-                <HeroIcon icon="MapPinIcon" className="h-4 w-4 mt-0.5 mr-2 text-gray-400 dark:text-slate-500 flex-shrink-0" />
-                <span className="font-medium mr-1">Adresa Kli.:</span> <span title={`${task.delivery_address_street}, ${task.delivery_address_city}`}>{task.delivery_address_street}, {task.delivery_address_city}</span>
-            </p>
-            <p className="flex items-center">
-                <HeroIcon icon="CurrencyEuroIcon" className="h-4 w-4 mr-2 text-gray-400 dark:text-slate-500 flex-shrink-0" />
-                <span className="font-medium mr-1">Vlera:</span> {parseFloat(task.total_amount || 0).toFixed(2)} €
-            </p>
-        </div>
+  if (!user?.is_available_for_delivery) {
+    return (
+      <div className="bg-white dark:bg-slate-800 shadow-xl rounded-lg p-6 text-center">
+        <InboxIcon className="h-16 w-16 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-2">Ju nuk jeni aktiv për dërgesa.</h3>
+        <p className="text-gray-500 dark:text-slate-400">Aktivizohuni për të parë detyrat e disponueshme.</p>
       </div>
-      <Button 
-        variant="primary" 
-        fullWidth 
-        onClick={() => handleAcceptTaskClick(task.id)}
-        isLoading={isLoadingAcceptTask && taskIdBeingAccepted === task.id} // Përdor props të reja
-        disabled={isLoadingAcceptTask || !!activeTask}
-        iconLeft={<HeroIcon icon="CheckCircleIcon" className="h-5 w-5"/>}
-        className="mt-auto"
-      > Prano Dërgesën </Button>
-    </div>
-  );
+    );
+  }
+  
+  if (isLoadingAccept && availableTasks.length === 0) { // Show loading only if no tasks are displayed
+      return (
+        <div className="flex flex-col justify-center items-center min-h-[200px]">
+            <ArrowPathIcon className="animate-spin h-10 w-10 text-primary-500 mb-3" />
+            <p className="text-gray-500 dark:text-slate-400">Duke kërkuar detyra...</p>
+        </div>
+    );
+  }
 
-  if (!isDriverOnline) { /* ... mbetet si më parë ... */ }  
-  if (isLoadingAvailableTasks && availableTasks.length === 0) { /* ... mbetet si më parë ... */ }
-  if (activeTask) { /* ... mbetet si më parë ... */ }
-  if (availableTasks.length === 0 && !isLoadingAvailableTasks) { /* ... mbetet si më parë ... */ }
+
+  if (availableTasks.length === 0) {
+    return (
+      <div className="bg-white dark:bg-slate-800 shadow-xl rounded-lg p-6 text-center">
+        <InboxIcon className="h-16 w-16 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-2">Nuk ka detyra të disponueshme për momentin.</h3>
+        <p className="text-gray-500 dark:text-slate-400 mb-4">Provoni të rifreskoni listën.</p>
+        <Button onClick={loadTasks} isLoading={isLoadingAccept} iconLeft={ArrowPathIcon}>
+          Rifresko Detyrat
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-        <div className="flex justify-between items-center">
-            <h3 className="text-xl sm:text-2xl font-semibold text-gray-800 dark:text-white">Dërgesa të Disponueshme ({availableTasks.length})</h3>
-            <Button variant="ghost" onClick={fetchAvailableTasks} isLoading={isLoadingAvailableTasks} disabled={isLoadingAvailableTasks || !!activeTask} size="sm" className="text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-500/10 p-1.5">
-                <HeroIcon icon="ArrowPathIcon" className={`h-5 w-5 ${isLoadingAvailableTasks ? 'animate-spin':''}`}/>
-            </Button>
-        </div>
-        {availableTasks.length > 0 && (
-             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-5 md:gap-6"> {/* Ndryshuar grid për më pak kolona */}
-                {availableTasks.map(task => (
-                <TaskCard key={task.id} task={task} />
-                ))}
+    <div className="bg-white dark:bg-slate-800 shadow-xl rounded-lg p-5 sm:p-6">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 dark:text-white">Detyrat e Disponueshme</h2>
+        <Button onClick={loadTasks} variant="ghost" size="sm" isLoading={isLoadingAccept && availableTasks.length > 0} disabled={isLoadingAccept} iconLeft={ArrowPathIcon} className="text-sm">
+          {isLoadingAccept && availableTasks.length > 0 ? 'Rifreskim...' : 'Rifresko'}
+        </Button>
+      </div>
+      {errorAccept && <p className="text-red-500 text-sm mb-3">{errorAccept}</p>}
+      <div className="space-y-4">
+        {availableTasks.map((task) => (
+          <div key={task.id} className="border dark:border-slate-700 rounded-lg p-4 hover:shadow-md transition-shadow">
+            <h3 className="text-lg font-medium text-primary-600 dark:text-primary-400 mb-2">Porosia #{task.order_id}</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm mb-3">
+              <div className="flex items-start">
+                <BuildingStorefrontIcon className="h-5 w-5 text-gray-400 dark:text-slate-500 mr-2 mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="font-medium text-gray-700 dark:text-slate-300">Nga Restoranti:</span>
+                  <p className="text-gray-600 dark:text-slate-400">{task.restaurant_name}</p>
+                  <p className="text-gray-500 dark:text-slate-500 text-xs">{task.restaurant_address}</p>
+                </div>
+              </div>
+              <div className="flex items-start">
+                <MapPinIcon className="h-5 w-5 text-gray-400 dark:text-slate-500 mr-2 mt-0.5 flex-shrink-0" />
+                <div>
+                  <span className="font-medium text-gray-700 dark:text-slate-300">Për Klientin:</span>
+                  <p className="text-gray-600 dark:text-slate-400">{task.customer_name}</p>
+                  <p className="text-gray-500 dark:text-slate-500 text-xs">{task.delivery_address}</p>
+                </div>
+              </div>
+              <div className="flex items-center">
+                <MapIcon className="h-5 w-5 text-gray-400 dark:text-slate-500 mr-2 flex-shrink-0" />
+                <span className="text-gray-600 dark:text-slate-400">Distanca: {task.distance_km ? `${task.distance_km.toFixed(1)} km` : 'N/A'}</span>
+              </div>
+              <div className="flex items-center">
+                <CurrencyEuroIcon className="h-5 w-5 text-green-500 dark:text-green-400 mr-2 flex-shrink-0" />
+                <span className="text-gray-600 dark:text-slate-400 font-semibold">Pagesa: {task.delivery_fee ? `${parseFloat(task.delivery_fee).toFixed(2)} €` : 'N/A'}</span>
+              </div>
             </div>
-        )}
+            <Button 
+              onClick={() => acceptTask(task.id)} 
+              isLoading={isLoadingAccept} // Consider a specific loading state per task if needed
+              disabled={isLoadingAccept}
+              iconLeft={CheckCircleIcon}
+              fullWidth
+              size="md"
+            >
+              Prano Detyrën
+            </Button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

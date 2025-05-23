@@ -4,14 +4,32 @@ import { useOutletContext } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext.jsx';
 import { restaurantApi } from '../../../api/restaurantApi.js';
 import { useNotification } from '../../../context/NotificationContext.jsx';
-import Button from '../../../components/Button.jsx';
-import HeroIcon from '../../../components/HeroIcon.jsx';
+import Button from "../../../components/Button.jsx";
+import { 
+    InformationCircleIcon, ClockIcon, MegaphoneIcon, TagIcon, CheckCircleIcon, BanknotesIcon, 
+    BuildingStorefrontIcon, ArrowPathIcon, PhotoIcon, MapPinIcon, PhoneIcon, ExclamationTriangleIcon, Cog6ToothIcon
+} from '@heroicons/react/24/outline';
 
 const daysOfWeek = [
   { id: 0, name: 'E Diel' }, { id: 1, name: 'E Hënë' }, { id: 2, name: 'E Martë' },
   { id: 3, name: 'E Mërkurë' }, { id: 4, name: 'E Enjte' }, { id: 5, name: 'E Premte' },
   { id: 6, name: 'E Shtunë' },
 ];
+
+const SettingSection = ({ title, description, icon: IconComponent, children }) => (
+  <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 sm:p-6">
+    <div className="flex items-start mb-3">
+      {IconComponent && <IconComponent className="h-7 w-7 text-primary-500 dark:text-primary-400 mr-3 mt-1 flex-shrink-0" />}
+      <div>
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-white">{title}</h2>
+        {description && <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 mt-0.5">{description}</p>}
+      </div>
+    </div>
+    <div className="space-y-4">
+      {children}
+    </div>
+  </div>
+);
 
 const RestaurantSettingsPage = () => {
   const { user, token, fetchAndSetUser } = useAuth();
@@ -216,123 +234,149 @@ const RestaurantSettingsPage = () => {
   if (isLoading.page) { /* ... mbetet si më parë ... */ }
   if (!currentRestaurantId && !isLoading.page) { /* ... mbetet si më parë ... */ }
 
+  if (error && !isLoading) {
+    return (
+        <div className="p-4 bg-red-50 dark:bg-red-900/30 rounded-md text-red-700 dark:text-red-200 flex items-center">
+            <ExclamationTriangleIcon className="h-6 w-6 mr-2 flex-shrink-0" />
+            <p>{error}</p>
+            <Button onClick={fetchRestaurantData} variant="outline" size="sm" className="ml-auto">Provo Përsëri</Button>
+        </div>
+    );
+  }
+  
+  if (!restaurantData && isLoading) {
+    return (
+        <div className="flex justify-center items-center py-20">
+            <ArrowPathIcon className="h-12 w-12 animate-spin text-primary-500" />
+        </div>
+    );
+  }
+
+  if (!restaurantData && !isLoading) {
+     return (
+      <div className="p-6 bg-yellow-50 dark:bg-yellow-900/30 rounded-md text-yellow-700 dark:text-yellow-200 flex items-center">
+        <ExclamationTriangleIcon className="h-6 w-6 mr-3 flex-shrink-0" />
+        <p>Nuk u gjetën të dhëna për restorantin. Sigurohuni që keni zgjedhur një restorant.</p>
+      </div>
+    );
+  }
+
   return (
-    // JSX mbetet pothuajse i njëjtë si versioni i mëparshëm, 
-    // vetëm sigurohu që ID-të e fushave dhe emrat përputhen me state-in 'details'
-    // dhe që input type="file" thërret handleImageChange.
-    <div className="container mx-auto space-y-8 md:space-y-10">
-      <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white">Konfigurimet: {details.name || nameFromContext || "Restoranti"}</h1>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white flex items-center">
+            <Cog6ToothIcon className="h-7 w-7 mr-2 text-primary-600 dark:text-primary-400" />
+            Konfigurimet e Restorantit
+        </h1>
+         <Button onClick={fetchRestaurantData} variant="outline" iconLeft={ArrowPathIcon} isLoading={isLoading && !!restaurantData} disabled={isLoading && !!restaurantData}>
+            Rifresko
+        </Button>
+      </div>
 
-      <form onSubmit={handleSaveDetails} className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8 space-y-5 md:space-y-6">
-        <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-4 border-b border-gray-200 dark:border-slate-700 pb-3 flex items-center">
-            <HeroIcon icon="InformationCircleIcon" className="h-6 w-6 mr-2.5 text-primary-500"/> Detajet Themelore
-        </h2>
-        {isLoading.details && <div className="text-center py-3"><div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-gray-400 dark:border-slate-500 mx-auto"></div></div>}
-        {!isLoading.details && (
-            <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
-                    <div>
-                        <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Emri i Restorantit</label>
-                        <input type="text" name="name" id="name" value={details.name} onChange={handleDetailChange} required 
-                            className={`input-form mt-1 ${errors.name ? 'input-form-error' : ''}`}/>
-                        {errors.name && <p className="input-error-message">{errors.name}</p>}
-                    </div>
-                    <div>
-                        <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Numri i Telefonit</label>
-                        <input type="tel" name="phone" id="phone" value={details.phone} onChange={handleDetailChange} required
-                            className={`input-form mt-1 ${errors.phone ? 'input-form-error' : ''}`} />
-                        {errors.phone && <p className="input-error-message">{errors.phone}</p>}
-                    </div>
+      {isLoading && !restaurantData && (
+         <div className="flex justify-center items-center py-10">
+            <ArrowPathIcon className="h-10 w-10 animate-spin text-primary-500" />
+         </div>
+      )}
+
+      {restaurantData && (
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <SettingSection title="Informacioni Bazë" description="Emri, përshkrimi dhe detajet e kontaktit." icon={BuildingStorefrontIcon}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+                <div>
+                    <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Emri i Restorantit</label>
+                    <input type="text" name="name" id="name" value={details.name} onChange={handleDetailChange} required 
+                        className={`input-form mt-1 ${errors.name ? 'input-form-error' : ''}`}/>
+                    {errors.name && <p className="input-error-message">{errors.name}</p>}
                 </div>
                 <div>
-                    <label htmlFor="address" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Adresa e Plotë</label>
-                    <input type="text" name="address" id="address" value={details.address} onChange={handleDetailChange} required
-                        className={`input-form mt-1 ${errors.address ? 'input-form-error' : ''}`} 
-                        placeholder="P.sh. Rr. Nëna Terezë, Nr. 10, Prishtinë"
-                    />
-                    {errors.address && <p className="input-error-message">{errors.address}</p>}
+                    <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Numri i Telefonit</label>
+                    <input type="tel" name="phone" id="phone" value={details.phone} onChange={handleDetailChange} required
+                        className={`input-form mt-1 ${errors.phone ? 'input-form-error' : ''}`} />
+                    {errors.phone && <p className="input-error-message">{errors.phone}</p>}
+                </div>
+            </div>
+            <div>
+                <label htmlFor="address" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Adresa e Plotë</label>
+                <input type="text" name="address" id="address" value={details.address} onChange={handleDetailChange} required
+                    className={`input-form mt-1 ${errors.address ? 'input-form-error' : ''}`} 
+                    placeholder="P.sh. Rr. Nëna Terezë, Nr. 10, Prishtinë"
+                />
+                {errors.address && <p className="input-error-message">{errors.address}</p>}
+            </div>
+            <div>
+            <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Përshkrimi</label>
+            <textarea name="description" id="description" value={details.description} onChange={handleDetailChange} rows="3"
+                        className="input-form mt-1"></textarea>
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Kategoritë e Kuzhinës</label>
+                <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mt-2 p-3 border rounded-md max-h-48 overflow-y-auto custom-scrollbar-thin ${errors.category_ids ? 'border-red-500 dark:border-red-400' : 'border-gray-200 dark:border-slate-600'}`}>
+                    {allGlobalCategories.length > 0 ? allGlobalCategories.map(cat => (
+                        <label key={cat.id} htmlFor={`cat-settings-${cat.id}`} className="flex items-center space-x-2 p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer transition-colors">
+                            <input type="checkbox" id={`cat-settings-${cat.id}`} name="category_ids" value={cat.id}
+                                checked={details.category_ids.includes(cat.id)} onChange={() => handleCategoryChange(cat.id)}
+                                className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500" />
+                            <span className="text-xs sm:text-sm text-gray-700 dark:text-slate-200">{cat.name}</span>
+                        </label>
+                    )) : <p className="text-xs text-gray-500 dark:text-slate-400 col-span-full text-center italic">Nuk ka kategori globale të definuara.</p>}
+                </div>
+                {errors.category_ids && <p className="input-error-message mt-1">{errors.category_ids}</p>}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+                <div>
+                    <label htmlFor="deliveryTime" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Koha e Dërgesës</label>
+                    <select name="deliveryTime" id="deliveryTime" value={details.deliveryTime} onChange={handleDetailChange} className="input-form mt-1">
+                        <option value="10-20 min">10-20 min</option> <option value="20-30 min">20-30 min</option>
+                        <option value="30-45 min">30-45 min</option> <option value="45-60 min">45-60 min</option> <option value="60-90 min">60-90 min</option>
+                    </select>
                 </div>
                 <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Përshkrimi</label>
-                <textarea name="description" id="description" value={details.description} onChange={handleDetailChange} rows="3"
-                            className="input-form mt-1"></textarea>
+                    <label htmlFor="priceRange" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Gama e Çmimeve</label>
+                    <select name="priceRange" id="priceRange" value={details.priceRange} onChange={handleDetailChange} className="input-form mt-1">
+                        <option value="€">€ (Lirë)</option> <option value="€€">€€ (Mesatare)</option> <option value="€€€">€€€ (Shtrenjtë)</option> <option value="€€€€">€€€€ (Shumë Shtrenjtë)</option>
+                    </select>
                 </div>
+            </div>
+            
+            <div>
+                <label htmlFor="imageFileDetails" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Foto Kryesore e Restorantit</label>
+                <input type="file" name="imageFileDetails" id="imageFileDetails" accept="image/*" onChange={handleImageChange}
+                    className="input-form file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 dark:file:bg-slate-600 file:text-primary-700 dark:file:text-primary-300 hover:file:bg-primary-100 dark:hover:file:bg-slate-500 cursor-pointer"/>
+                {imagePreview && <img src={imagePreview} alt="Parapamje" className="mt-3 h-32 w-auto rounded-lg shadow-md object-cover border border-gray-200 dark:border-slate-600"/>}
+            </div>
 
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Kategoritë e Kuzhinës</label>
-                    <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mt-2 p-3 border rounded-md max-h-48 overflow-y-auto custom-scrollbar-thin ${errors.category_ids ? 'border-red-500 dark:border-red-400' : 'border-gray-200 dark:border-slate-600'}`}>
-                        {allGlobalCategories.length > 0 ? allGlobalCategories.map(cat => (
-                            <label key={cat.id} htmlFor={`cat-settings-${cat.id}`} className="flex items-center space-x-2 p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer transition-colors">
-                                <input type="checkbox" id={`cat-settings-${cat.id}`} name="category_ids" value={cat.id}
-                                    checked={details.category_ids.includes(cat.id)} onChange={() => handleCategoryChange(cat.id)}
-                                    className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500" />
-                                <span className="text-xs sm:text-sm text-gray-700 dark:text-slate-200">{cat.name}</span>
-                            </label>
-                        )) : <p className="text-xs text-gray-500 dark:text-slate-400 col-span-full text-center italic">Nuk ka kategori globale të definuara.</p>}
-                    </div>
-                    {errors.category_ids && <p className="input-error-message mt-1">{errors.category_ids}</p>}
-                </div>
+            <div className="pt-3 flex justify-end">
+            <Button type="submit" variant="primary" isLoading={isLoading.details} disabled={isLoading.details || isLoading.page}>Ruaj Detajet</Button>
+            </div>
+          </SettingSection>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
-                    <div>
-                        <label htmlFor="deliveryTime" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Koha e Dërgesës</label>
-                        <select name="deliveryTime" id="deliveryTime" value={details.deliveryTime} onChange={handleDetailChange} className="input-form mt-1">
-                            <option value="10-20 min">10-20 min</option> <option value="20-30 min">20-30 min</option>
-                            <option value="30-45 min">30-45 min</option> <option value="45-60 min">45-60 min</option> <option value="60-90 min">60-90 min</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label htmlFor="priceRange" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Gama e Çmimeve</label>
-                        <select name="priceRange" id="priceRange" value={details.priceRange} onChange={handleDetailChange} className="input-form mt-1">
-                            <option value="€">€ (Lirë)</option> <option value="€€">€€ (Mesatare)</option> <option value="€€€">€€€ (Shtrenjtë)</option> <option value="€€€€">€€€€ (Shumë Shtrenjtë)</option>
-                        </select>
-                    </div>
+          <SettingSection title="Orari i Punës" description="Specifikoni orarin e hapjes dhe mbylljes për çdo ditë." icon={ClockIcon}>
+            <div className="space-y-3">
+            {openingHours.map((day, index) => (
+                <div key={day.day_of_week} className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-3 gap-y-2 p-2 sm:p-3 border border-gray-200 dark:border-slate-600 rounded-md hover:shadow-sm transition-shadow">
+                <label htmlFor={`day-${day.day_of_week}-name`} className="text-sm font-medium text-gray-700 dark:text-slate-300 sm:col-span-1">{daysOfWeek.find(d => d.id === day.day_of_week)?.name}</label>
+                <div className="sm:col-span-1">
+                    <input type="time" id={`open-${day.day_of_week}`} value={day.is_closed ? '' : day.open_time} disabled={day.is_closed} onChange={(e) => handleHourChange(index, 'open_time', e.target.value)} className={`input-form text-sm ${day.is_closed ? 'input-disabled' : ''}`} />
                 </div>
-                
-                <div>
-                    <label htmlFor="imageFileDetails" className="block text-sm font-medium text-gray-700 dark:text-slate-300">Foto Kryesore e Restorantit</label>
-                    <input type="file" name="imageFileDetails" id="imageFileDetails" accept="image/*" onChange={handleImageChange}
-                        className="input-form file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 dark:file:bg-slate-600 file:text-primary-700 dark:file:text-primary-300 hover:file:bg-primary-100 dark:hover:file:bg-slate-500 cursor-pointer"/>
-                    {imagePreview && <img src={imagePreview} alt="Parapamje" className="mt-3 h-32 w-auto rounded-lg shadow-md object-cover border border-gray-200 dark:border-slate-600"/>}
+                <div className="sm:col-span-1">
+                    <input type="time" id={`close-${day.day_of_week}`} value={day.is_closed ? '' : day.close_time} disabled={day.is_closed} onChange={(e) => handleHourChange(index, 'close_time', e.target.value)} className={`input-form text-sm ${day.is_closed ? 'input-disabled' : ''}`} />
                 </div>
-
-                <div className="pt-3 flex justify-end">
-                <Button type="submit" variant="primary" isLoading={isLoading.details} disabled={isLoading.details || isLoading.page}>Ruaj Detajet</Button>
+                <div className="sm:col-span-1 flex items-center justify-start sm:justify-end">
+                    <input type="checkbox" id={`closed-${day.day_of_week}`} checked={day.is_closed} onChange={(e) => handleHourChange(index, 'is_closed', e.target.checked)} className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"/>
+                    <label htmlFor={`closed-${day.day_of_week}`} className="ml-2 text-sm text-gray-700 dark:text-slate-300">Mbyllur</label>
                 </div>
-            </>
-        )}
-      </form>
-
-      <form onSubmit={handleSaveHours} className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8 space-y-5 md:space-y-6">
-        <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-4 border-b border-gray-200 dark:border-slate-700 pb-3 flex items-center">
-            <HeroIcon icon="ClockIcon" className="h-6 w-6 mr-2.5 text-primary-500"/> Orari i Punës
-        </h2>
-        {isLoading.hours && <div className="text-center py-3"><div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-gray-400 dark:border-slate-500 mx-auto"></div></div>}
-        {!isLoading.hours && (
-            <>
-                <div className="space-y-3">
-                {openingHours.map((day, index) => (
-                    <div key={day.day_of_week} className="grid grid-cols-1 sm:grid-cols-4 items-center gap-x-3 gap-y-2 p-2 sm:p-3 border border-gray-200 dark:border-slate-600 rounded-md hover:shadow-sm transition-shadow">
-                    <label htmlFor={`day-${day.day_of_week}-name`} className="text-sm font-medium text-gray-700 dark:text-slate-300 sm:col-span-1">{daysOfWeek.find(d => d.id === day.day_of_week)?.name}</label>
-                    <div className="sm:col-span-1">
-                        <input type="time" id={`open-${day.day_of_week}`} value={day.is_closed ? '' : day.open_time} disabled={day.is_closed} onChange={(e) => handleHourChange(index, 'open_time', e.target.value)} className={`input-form text-sm ${day.is_closed ? 'input-disabled' : ''}`} />
-                    </div>
-                    <div className="sm:col-span-1">
-                        <input type="time" id={`close-${day.day_of_week}`} value={day.is_closed ? '' : day.close_time} disabled={day.is_closed} onChange={(e) => handleHourChange(index, 'close_time', e.target.value)} className={`input-form text-sm ${day.is_closed ? 'input-disabled' : ''}`} />
-                    </div>
-                    <div className="sm:col-span-1 flex items-center justify-start sm:justify-end">
-                        <input type="checkbox" id={`closed-${day.day_of_week}`} checked={day.is_closed} onChange={(e) => handleHourChange(index, 'is_closed', e.target.checked)} className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"/>
-                        <label htmlFor={`closed-${day.day_of_week}`} className="ml-2 text-sm text-gray-700 dark:text-slate-300">Mbyllur</label>
-                    </div>
-                    </div>
-                ))}
                 </div>
-                <div className="pt-3 flex justify-end">
-                <Button type="submit" variant="primary" isLoading={isLoading.hours} disabled={isLoading.hours || isLoading.page}>Ruaj Orarin</Button>
-                </div>
-            </>
-        )}
-      </form>
+            ))}
+            </div>
+            <div className="pt-3 flex justify-end">
+            <Button type="submit" variant="primary" isLoading={isLoading.hours} disabled={isLoading.hours || isLoading.page}>Ruaj Orarin</Button>
+            </div>
+          </SettingSection>
+        </form>
+      )}
     </div>
   );
 };

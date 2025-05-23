@@ -93,7 +93,8 @@ export const customerApi = {
   fetchUserOrders: async () => {
     console.log('CUSTOMER API (Real): Fetching user orders');
     // Backend OrderViewSet.get_queryset() filtron për userin e kyçur
-    return apiService.request('/orders/');
+    const response = await apiService.request('/orders/');
+    return response.results || []; // Kthe results ose një array bosh
   },
   fetchOrderById: async (orderId) => { // Për OrderConfirmationPage (opsionale)
     console.log(`CUSTOMER API (Real): Fetching order by ID: ${orderId}`);
@@ -112,5 +113,19 @@ export const customerApi = {
   },
   deleteUserAddress: async (addressId) => {
     return apiService.request(`/addresses/${addressId}/`, { method: 'DELETE' });
+  },
+
+  // --- Review related functions (LIDHUR ME BACKEND TANI) ---
+  fetchRestaurantReviews: async (restaurantId) => {
+    console.log(`CUSTOMER API (Real): Fetching reviews for restaurant ${restaurantId}`);
+    return apiService.request(`/restaurants/${restaurantId}/reviews/`);
+  },
+  submitRestaurantReview: async (restaurantId, reviewData) => {
+    // reviewData duhet të jetë { rating: number, comment: string }
+    console.log(`CUSTOMER API (Real): Submitting review for restaurant ${restaurantId}`, reviewData);
+    return apiService.request(`/restaurants/${restaurantId}/reviews/`, {
+      method: 'POST',
+      body: JSON.stringify(reviewData)
+    });
   },
 };

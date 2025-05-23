@@ -4,9 +4,9 @@ import { useOutletContext } from 'react-router-dom'; // Added
 import { restaurantApi } from '../../../api/restaurantApi';
 import { useAuth } from '../../../context/AuthContext';
 import { useNotification } from '../../../context/NotificationContext';
-import Button from '../../../components/Button';
-import HeroIcon from '../../../components/HeroIcon';
-import MenuCategoryCard from '../components/MenuCategoryCard';
+import Button from "../../../components/Button";
+import { TagIcon, PlusCircleIcon, QueueListIcon, ArrowPathIcon, ExclamationTriangleIcon, PencilIcon, TrashIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+import MenuCategoryCard from "../components/MenuCategoryCard";
 import MenuItemTableRow from '../components/MenuItemTableRow';
 import MenuCategoryFormModal from '../components/MenuCategoryFormModal';
 import MenuItemFormModal from '../components/MenuItemFormModal';
@@ -119,12 +119,22 @@ const MenuManagementPage = () => {
   }
 
   return (
-    <div className="container mx-auto space-y-10">
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white">Menaxhimi i Menusë</h1>
-        <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3 w-full sm:w-auto">
-          <Button fullWidth smFullWidth={false} variant="outline" onClick={() => handleOpenCategoryModal()} iconLeft={<HeroIcon icon="TagIcon" className="h-5 w-5"/>}> Shto Kategori </Button>
-          <Button fullWidth smFullWidth={false} variant="primary" onClick={() => handleOpenItemModal()} iconLeft={<HeroIcon icon="PlusCircleIcon" className="h-5 w-5"/>} disabled={menuCategories.length === 0} title={menuCategories.length === 0 ? "Shtoni kategori fillimisht" : "Shto Artikull"}> Shto Artikull </Button>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white flex items-center">
+            <QueueListIcon className="h-7 w-7 mr-2 text-primary-600 dark:text-primary-400" />
+            Menaxhimi i Menusë
+        </h1>
+        <div className="flex items-center gap-2">
+            <Button onClick={fetchMenuData} variant="outline" iconLeft={ArrowPathIcon} isLoading={isLoading} disabled={isLoading}>
+                Rifresko
+            </Button>
+            <Button onClick={() => { setSelectedMenuItem(null); setIsMenuItemModalOpen(true); }} iconLeft={PlusCircleIcon}>
+                Shto Artikull të Ri
+            </Button>
+            <Button onClick={() => { setSelectedCategory(null); setIsCategoryModalOpen(true); }} variant="secondary" iconLeft={TagIcon}>
+                Shto Kategori
+            </Button>
         </div>
       </div>
 

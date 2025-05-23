@@ -1,173 +1,160 @@
 // src/modules/customer/pages/CartPage.jsx
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../../../context/CartContext.jsx';
-import { useAuth } from '../../../context/AuthContext.jsx';
 import Button from '../../../components/Button.jsx';
-import HeroIcon from '../../../components/HeroIcon.jsx';
-import OrderSummaryCard from '../components/OrderSummaryCard.jsx';
-import { useNotification } from '../../../context/NotificationContext.jsx';
+import { ShoppingCartIcon, TrashIcon, PlusCircleIcon, BuildingStorefrontIcon, MinusCircleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
+import { customerApi } from '../../../api/customerApi.js'; // For fetching restaurant details if needed
+import { useAuth } from '../../../context/AuthContext.jsx';
 
 const CartPage = () => {
-  const { cart, updateCartItemQuantity, removeCartItem, isLoading, error: cartError, clearCart } = useCart(); // Added clearCart
-  const { isAuthenticated } = useAuth();
-  const { showError } = useNotification();
+  const { 
+    cart, 
+    removeItemFromCart, 
+    updateItemQuantity, 
+    clearCart, 
+    getCartTotal, 
+    getRestaurantIdFromCart 
+  } = useCart();
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+  const [restaurantDetails, setRestaurantDetails] = useState(null);
+  const cartRestaurantId = getRestaurantIdFromCart();
 
-  const handleQuantityChange = async (itemId, currentQuantity, change) => {
-    const newQuantity = currentQuantity + change;
-    if (newQuantity < 1) {
-      // Optionally, confirm before removing
-      await removeCartItem(itemId);
+  useEffect(() => {
+    if (cartRestaurantId) {
+      customerApi.fetchRestaurantDetails(cartRestaurantId)
+        .then(data => setRestaurantDetails(data))
+        .catch(err => console.error("Failed to fetch restaurant details for cart:", err));
     } else {
-      await updateCartItemQuantity(itemId, newQuantity);
+      setRestaurantDetails(null);
     }
-  };
+  }, [cartRestaurantId]);
 
-  const handleProceedToCheckout = () => {
-    if (cart.items.length === 0) {
-        showError("Shporta juaj është bosh. Ju lutem shtoni artikuj.");
-        return;
-    }
+  const handleCheckout = () => {
     if (!isAuthenticated) {
-      showError("Ju lutem kyçuni ose regjistrohuni për të vazhduar.");
-      navigate('/auth/login', { state: { from: { pathname: '/customer/checkout' }, message: "Ju duhet të kyçeni për të vazhduar." } });
+        navigate('/login', { state: { from: { pathname: '/customer/checkout' } } });
     } else {
-      navigate('/customer/checkout');
+        navigate('/customer/checkout');
     }
   };
 
-  // Ensure cart and cart.items exist before trying to access length or reduce
-  const safeCartItems = cart?.items || [];
-
-  if (isLoading && safeCartItems.length === 0) { // Check safeCartItems
+  if (cart.length === 0) {
     return (
-      <div className="flex flex-col justify-center items-center min-h-[calc(100vh-300px)]">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-primary-500 mb-4"></div>
-        <p className="text-lg text-gray-600 dark:text-gray-400">Duke ngarkuar shportën...</p>
+      <div className="container mx-auto py-8 text-center">
+        <ShoppingCartIcon className="h-24 w-24 text-gray-300 dark:text-slate-600 mx-auto mb-6" />
+        <h1 className="text-2xl font-semibold text-gray-700 dark:text-slate-200 mb-3">Shporta juaj është bosh</h1>
+        <p className="text-gray-500 dark:text-slate-400 mb-6">Shtoni artikuj nga restorantet për të vazhduar.</p>
+        <Button onClick={() => navigate('/customer/restaurants')} variant="primary" size="lg" iconLeft={BuildingStorefrontIcon}>
+          Shfleto Restorantet
+        </Button>
       </div>
     );
   }
-
-  if (cartError) {
-    return (
-        <div className="container mx-auto px-4 py-8 text-center">
-            <div className="p-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg shadow-md">
-                <HeroIcon icon="ExclamationTriangleIcon" className="h-12 w-12 text-red-500 dark:text-red-400 mx-auto mb-4" />
-                <h2 className="text-xl font-semibold text-red-700 dark:text-red-300 mb-2">Gabim në Shportë</h2>
-                <p className="text-red-600 dark:text-red-300">{cartError}</p>
-                <Button onClick={() => window.location.reload()} variant="danger" className="mt-6">
-                    Provo Rifreskimin e Faqes
-                </Button>
-            </div>
-        </div>
-    );
-  }
-  
-  const deliveryFee = safeCartItems.length > 0 ? 2.00 : 0;
-  const subtotal = safeCartItems.reduce((sum, item) => {
-    const price = parseFloat(item.menu_item_details?.price || 0);
-    return sum + price * item.quantity;
-  }, 0);
-  const total = subtotal + deliveryFee;
 
   return (
-    <div className="container mx-auto px-2 sm:px-0 py-6 md:py-8">
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 md:mb-8 px-2 sm:px-0">
-        <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-800 dark:text-white">Shporta Juaj</h1>
-        {safeCartItems.length > 0 && (
-            <Button 
-                variant="link" 
-                onClick={async () => { 
-                    // Optionally add confirmation before clearing cart
-                    await clearCart(); 
-                }} 
-                className="text-sm text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 mt-2 sm:mt-0"
-                disabled={isLoading}
-                iconLeft={<HeroIcon icon="TrashIcon" className="h-4 w-4"/>}
-            >
+    <div className="container mx-auto py-6 sm:py-8">
+      <div className="flex flex-col lg:flex-row gap-6 sm:gap-8">
+        {/* Cart Items Section */}
+        <div className="lg:w-2/3">
+          <div className="flex justify-between items-center mb-4 sm:mb-6">
+            <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white">Shporta Juaj</h1>
+            {cart.length > 0 && (
+              <Button onClick={clearCart} variant="outline" size="sm" iconLeft={TrashIcon} className="text-red-500 border-red-500 hover:bg-red-50 dark:text-red-400 dark:border-red-400 dark:hover:bg-red-500/10">
                 Pastro Shportën
-            </Button>
-        )}
-      </div>
+              </Button>
+            )}
+          </div>
 
-
-      {safeCartItems.length === 0 ? (
-        <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-xl shadow-lg min-h-[350px] flex flex-col justify-center items-center px-4">
-          <HeroIcon icon="ShoppingCartIcon" className="h-20 w-20 text-gray-300 dark:text-slate-600 mx-auto mb-6" />
-          <h2 className="text-xl sm:text-2xl font-semibold text-gray-700 dark:text-slate-200 mb-3">Shporta juaj është bosh!</h2>
-          <p className="text-gray-500 dark:text-slate-400 mb-8 max-w-md mx-auto">Duket se nuk keni shtuar ende asgjë. Filloni të eksploroni menutë tona të shijshme!</p>
-          <Button as={Link} to="/customer/restaurants" variant="primary" size="lg" iconLeft={<HeroIcon icon="BuildingStorefrontIcon" className="h-5 w-5"/>}>
-            Shfleto Restorantet
-          </Button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 items-start">
-          <div className="lg:col-span-2 bg-white dark:bg-slate-800 shadow-xl rounded-xl p-4 sm:p-6 md:p-8">
-            <div className="flex justify-between items-center mb-4 sm:mb-5 border-b border-gray-200 dark:border-slate-700 pb-3">
-                <h2 className="text-lg sm:text-xl font-semibold text-gray-700 dark:text-slate-200">
-                Artikujt ({safeCartItems.length})
-                </h2>
+          {restaurantDetails && (
+            <div className="mb-4 p-3 bg-primary-50 dark:bg-primary-800/30 rounded-lg border border-primary-200 dark:border-primary-700">
+              <p className="text-sm text-primary-700 dark:text-primary-300">
+                <InformationCircleIcon className="h-5 w-5 inline mr-1.5 align-text-bottom" />
+                Ju po porosisni nga: <Link to={`/customer/restaurants/${restaurantDetails.id}`} className="font-semibold hover:underline">{restaurantDetails.name}</Link>.
+                Për të porositur nga një restorant tjetër, ju lutem pastroni shportën aktuale.
+              </p>
             </div>
-            <ul className="divide-y divide-gray-200 dark:divide-slate-700">
-              {safeCartItems.map((cartItem) => {
-                const itemDetails = cartItem.menu_item_details || {};
-                const itemPrice = parseFloat(itemDetails.price || 0);
-                return (
-                    <li key={cartItem.id} className="py-4 sm:py-5 flex flex-col sm:flex-row items-start sm:items-center space-y-3 sm:space-y-0">
-                    <img 
-                        src={itemDetails.image || 'https://placehold.co/120x120/FDE68A/78350F?text=Ushqim'} 
-                        alt={itemDetails.name || 'Artikull'} 
-                        className="w-20 h-20 sm:w-24 sm:h-24 rounded-lg object-cover shadow-sm sm:mr-4 flex-shrink-0 border border-gray-200 dark:border-slate-700"
-                    />
-                    <div className="flex-grow min-w-0">
-                        <h3 className="text-md sm:text-lg font-medium text-gray-800 dark:text-white truncate" title={itemDetails.name}>{itemDetails.name || 'Artikull i Panjohur'}</h3>
-                        <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 mt-0.5">
-                            Çmimi: {itemPrice.toFixed(2)} €
-                        </p>
-                        <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
-                            Nga: {itemDetails.restaurant_name || 'Restorant'} {/* Shtuar emri i restorantit nëse disponohet */}
-                        </p>
-                    </div>
-                    <div className="flex items-center space-x-2 sm:ml-4 mt-2 sm:mt-0 flex-shrink-0">
-                        <Button variant="outline" size="sm" onClick={() => handleQuantityChange(cartItem.id, cartItem.quantity, -1)} disabled={isLoading} className="p-1.5 sm:p-2 rounded-md" aria-label="Ul sasinë">
-                            <HeroIcon icon="MinusIcon" className="h-4 w-4"/>
-                        </Button>
-                        <span className="text-sm sm:text-md font-medium text-gray-700 dark:text-slate-200 w-8 text-center tabular-nums">{cartItem.quantity}</span>
-                        <Button variant="outline" size="sm" onClick={() => handleQuantityChange(cartItem.id, cartItem.quantity, 1)} disabled={isLoading} className="p-1.5 sm:p-2 rounded-md" aria-label="Rrit sasinë">
-                            <HeroIcon icon="PlusIcon" className="h-4 w-4"/>
-                        </Button>
-                    </div>
-                    <div className="w-full sm:w-auto text-left sm:text-right mt-3 sm:mt-0 sm:ml-4 flex-shrink-0">
-                        <p className="text-sm sm:text-md font-semibold text-gray-800 dark:text-white">
-                            {(itemPrice * cartItem.quantity).toFixed(2)} €
-                        </p>
-                        <Button variant="link" size="sm" onClick={() => removeCartItem(cartItem.id)} disabled={isLoading}
-                            className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-0 mt-1 text-xs sm:text-sm hover:underline">
-                            Largo
-                        </Button>
-                    </div>
-                    </li>
-                );
-              })}
-            </ul>
-          </div>
+          )}
 
-          <div className="lg:col-span-1">
-            <OrderSummaryCard
-              subtotal={subtotal}
-              deliveryFee={deliveryFee}
-              total={total}
-              itemCount={safeCartItems.length}
-              buttonText={isAuthenticated ? "Vazhdo te Pagesa" : "Kyçu për të Vazhduar"}
-              onButtonClick={handleProceedToCheckout}
-              isLoading={isLoading} // Mund të përdorësh një isLoading specifik për butonin e pagesës
-              showPromoCode={true}
-              disabled={safeCartItems.length === 0} // Disable if cart is empty
-            />
+          <div className="space-y-4">
+            {cart.map(item => (
+              <div key={item.id} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <img 
+                  src={item.image_url || '/placeholder-food-item.jpg'} 
+                  alt={item.name} 
+                  className="w-24 h-24 sm:w-20 sm:h-20 object-cover rounded-md flex-shrink-0"
+                />
+                <div className="flex-grow">
+                  <h3 className="text-md sm:text-lg font-medium text-gray-800 dark:text-slate-100">{item.name}</h3>
+                  <p className="text-sm text-gray-500 dark:text-slate-400">Çmimi: {parseFloat(item.price).toFixed(2)} €</p>
+                </div>
+                <div className="flex items-center space-x-2 sm:space-x-3 my-2 sm:my-0 flex-shrink-0">
+                  <Button 
+                    onClick={() => updateItemQuantity(item.id, item.quantity - 1)} 
+                    disabled={item.quantity <= 1}
+                    variant="ghost" 
+                    size="icon" 
+                    aria-label="Redukto sasinë"
+                    className="p-1.5"
+                  >
+                    <MinusCircleIcon className="h-5 w-5 text-gray-500 dark:text-slate-400" />
+                  </Button>
+                  <span className="text-md font-medium text-gray-700 dark:text-slate-200 w-8 text-center">{item.quantity}</span>
+                  <Button 
+                    onClick={() => updateItemQuantity(item.id, item.quantity + 1)} 
+                    variant="ghost" 
+                    size="icon" 
+                    aria-label="Shto sasinë"
+                    className="p-1.5"
+                  >
+                    <PlusCircleIcon className="h-5 w-5 text-gray-500 dark:text-slate-400" />
+                  </Button>
+                </div>
+                <p className="text-md sm:text-lg font-semibold text-gray-800 dark:text-slate-100 w-full sm:w-auto text-right sm:text-left">
+                  {(parseFloat(item.price) * item.quantity).toFixed(2)} €
+                </p>
+                <Button 
+                  onClick={() => removeItemFromCart(item.id)} 
+                  variant="ghost" 
+                  size="icon" 
+                  aria-label="Hiqe artikullin"
+                  className="text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10 p-1.5"
+                >
+                  <TrashIcon className="h-5 w-5" />
+                </Button>
+              </div>
+            ))}
           </div>
         </div>
-      )}
+
+        {/* Order Summary Section */}
+        <div className="lg:w-1/3">
+          <div className="bg-white dark:bg-slate-800 p-5 sm:p-6 rounded-lg shadow-lg sticky top-24"> {/* sticky top to account for header */}
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4 border-b pb-3 dark:border-slate-700">Përmbledhja e Porosisë</h2>
+            <div className="space-y-2 mb-4">
+              <div className="flex justify-between text-gray-600 dark:text-slate-300">
+                <span>Nëntotali:</span>
+                <span>{getCartTotal().toFixed(2)} €</span>
+              </div>
+              <div className="flex justify-between text-gray-600 dark:text-slate-300">
+                <span>Tarifa e Dërgesës:</span>
+                <span>{(restaurantDetails?.delivery_fee || 0).toFixed(2)} €</span> {/* Placeholder, calculate properly */}
+              </div>
+              {/* Add discounts or other fees here if applicable */}
+            </div>
+            <div className="flex justify-between text-xl font-bold text-gray-800 dark:text-white pt-3 border-t dark:border-slate-700">
+              <span>Totali:</span>
+              <span>{(getCartTotal() + (restaurantDetails?.delivery_fee || 0)).toFixed(2)} €</span>
+            </div>
+            <Button onClick={handleCheckout} fullWidth size="lg" className="mt-6">
+              Vazhdo te Pagesa
+            </Button>
+            <Link to="/customer/restaurants" className="block text-center mt-4 text-sm text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300">
+              Vazhdo Blerjen
+            </Link>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

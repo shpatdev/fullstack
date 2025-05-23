@@ -4,7 +4,7 @@ import { adminApi } from '../../../api/adminApi';
 import { useAuth } from '../../../context/AuthContext';
 import { useNotification } from '../../../context/NotificationContext';
 import Button from '../../../components/Button';
-import HeroIcon from '../../../components/HeroIcon';
+import { ArrowPathIcon, PlusCircleIcon, MagnifyingGlassIcon, FunnelIcon, XCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import RestaurantTableRow from '../components/RestaurantTableRow';
 import RestaurantFormModal from '../components/RestaurantFormModal';
 import ConfirmationModal from '../../../components/ConfirmationModal';
@@ -153,46 +153,59 @@ const ManageRestaurantsPage = () => {
   }).sort((a,b) => new Date(b.date_created) - new Date(a.date_created));
 
 
+  if (error) {
+    return (
+        <div className="p-4 bg-red-50 dark:bg-red-900/30 rounded-md text-red-700 dark:text-red-200 flex items-center">
+            <ExclamationTriangleIcon className="h-6 w-6 mr-2 flex-shrink-0" />
+            <p>{error}</p>
+        </div>
+    );
+  }
+
   return (
-    <div className="container mx-auto">
-      <div className="mb-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
         <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white">Menaxho Restorantet</h1>
-        <div className="flex space-x-2">
-            <Button variant="outline" onClick={fetchRestaurantsAndCategories} isLoading={isLoading} disabled={isLoading}
-                    iconLeft={<HeroIcon icon="ArrowPathIcon" className={`h-4 w-4 ${isLoading ? 'animate-spin': ''}`}/>}>
+        <div className="flex gap-2">
+            <Button onClick={fetchRestaurantsAndCategories} variant="outline" iconLeft={ArrowPathIcon} isLoading={isLoading} disabled={isLoading}>
                 Rifresko
             </Button>
-            <Button variant="primary" onClick={() => handleOpenModal()}
-                    iconLeft={<HeroIcon icon="PlusCircleIcon" className="h-5 w-5"/>}>
+            <Button onClick={() => handleOpenModal()} iconLeft={PlusCircleIcon}>
                  Shto Restorant
             </Button>
         </div>
       </div>
-
-       {/* Filters and Search */}
-      <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-md">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
-          <div className="sm:col-span-2 md:col-span-1">
-            <label htmlFor="searchRestaurants" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kërko</label>
-            <input id="searchRestaurants" type="text" placeholder="Emri, adresa, pronari..." value={searchTerm} onChange={handleSearchChange} className="input-form"/>
+      
+      {/* Search and Filter Bar */}
+      <div className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow-md">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div className="relative md:col-span-2">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 dark:text-slate-500" />
+            </div>
+            <input
+              type="text"
+              placeholder="Kërko restorant (emër, email, qytet)..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="input-form w-full pl-10"
+            />
           </div>
-          <div>
-            <label htmlFor="activityFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Aktiviteti</label>
-            <select id="activityFilter" name="activity" value={filters.activity} onChange={handleFilterChange} className="input-form">
-                <option value="ALL">Të gjitha</option> <option value="ACTIVE">Aktiv</option> <option value="INACTIVE">Joaktiv</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="approvalFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Miratimi</label>
-            <select id="approvalFilter" name="approval" value={filters.approval} onChange={handleFilterChange} className="input-form">
-                <option value="ALL">Të gjitha</option> <option value="APPROVED">Miratuar</option> <option value="PENDING">Në Pritje</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="categoryFilter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kategoria e Kuzhinës</label>
-            <select id="categoryFilter" name="category" value={filters.category} onChange={handleFilterChange} className="input-form">
-                <option value="ALL">Të gjitha</option>
-                {allGlobalCategories.map(cat => <option key={cat.id} value={cat.id.toString()}>{cat.name}</option>)}
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FunnelIcon className="h-5 w-5 text-gray-400 dark:text-slate-500" />
+            </div>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="input-form w-full pl-10"
+            >
+              <option value="">Të gjitha Statuset</option>
+              <option value="PENDING">Në Pritje</option>
+              <option value="APPROVED">Aprovuar</option>
+              <option value="REJECTED">Refuzuar</option>
+              <option value="ACTIVE">Aktiv</option>
+              <option value="INACTIVE">Joaktiv</option>
             </select>
           </div>
         </div>
@@ -204,10 +217,6 @@ const ManageRestaurantsPage = () => {
         </div>
       )}
       
-      {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 dark:bg-red-700/20 dark:text-red-300 p-4 rounded-md mb-6" role="alert">
-        <p className="font-bold">Gabim</p> <p>{error}</p>
-      </div>}
-
       {!isLoading && !error && (
         <div className="bg-white dark:bg-gray-800 shadow-xl rounded-lg overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">

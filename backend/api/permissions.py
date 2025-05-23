@@ -51,8 +51,19 @@ class IsRestaurantOwnerOrAdmin(permissions.BasePermission):
         if view.action == 'create' and view.basename == 'restaurant': # Krijimi i një restoranti të ri
             return request.user.role == User.Role.RESTAURANT_OWNER
         
-        # Për nested resources (menu categories, menu items)
+        # Për nested resources OSE actions që operojnë mbi një instancë të lidhur me restorantin
+        # si p.sh. add_reply te ReviewViewSet (ku pk është i review)
+        # ose create/update/delete te MenuCategoryViewSet/MenuItemViewSet/OperatingHoursViewSet
+        # (ku restaurant_pk është te kwargs)
         restaurant_pk = view.kwargs.get('restaurant_pk')
+        
+        # Nëse jemi duke shtuar reply te një review, review_pk është te kwargs['pk']
+        # dhe restaurant_pk nuk është direkt te view.kwargs, por te review_instance.restaurant.id
+        # Këtë rast e trajtojmë te has_object_permission
+        if not restaurant_pk and view.action == 'add_reply' and view.basename.startswith('restaurant-reviews'):
+            # Për add_reply, has_object_permission do të bëjë kontrollin
+            return True 
+
         if restaurant_pk:
             from .models import Restaurant # Import i vonuar
             try:
@@ -60,17 +71,29 @@ class IsRestaurantOwnerOrAdmin(permissions.BasePermission):
                 return restaurant.owner == request.user
             except Restaurant.DoesNotExist:
                 return False
-        return False # Nëse nuk është SAFE, as admin, as krijim restoranti, as nested me pronar të saktë
+        # Për veprime të tjera që nuk janë SAFE dhe nuk kanë restaurant_pk ose nuk janë create restaurant
+        # duhet të kthejë False nëse nuk është admin.
+        # Kjo mbulon rastet kur view nuk është nested ose nuk ka lidhje direkte me restaurant_pk në kwargs.
+        # Për shembull, një action në UserViewSet nuk do të kalonte këtu.
+        return False
+
 
     def has_object_permission(self, request, view, obj):
         if request.method in permissions.SAFE_METHODS: return True
         if request.user and request.user.is_staff: return True
         
         target_restaurant = None
-        # from .models import Restaurant, MenuCategory, MenuItem # Import i vonuar
-        if obj.__class__.__name__ == 'Restaurant': target_restaurant = obj
-        elif hasattr(obj, 'restaurant'): target_restaurant = obj.restaurant
+        # from .models import Restaurant, MenuCategory, MenuItem, OperatingHours, Review, Order # Import i vonuar
         
+        obj_class_name = obj.__class__.__name__
+
+        if obj_class_name == 'Restaurant': 
+            target_restaurant = obj
+        elif hasattr(obj, 'restaurant'): # Për MenuCategory, MenuItem, OperatingHours, Review, ReviewReply
+            target_restaurant = obj.restaurant
+        # elif obj_class_name == 'Order' and hasattr(obj, 'restaurant'): # Për OrderViewSet, tashmë mbulohet nga hasattr(obj, 'restaurant')
+            # target_restaurant = obj.restaurant
+
         if target_restaurant:
             return target_restaurant.owner == request.user
         return False

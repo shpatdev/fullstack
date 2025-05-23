@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom'; // Added useNavigate
 import { useAuth } from '../context/AuthContext';
 import Sidebar from '../modules/restaurant/components/Sidebar';
-import HeroIcon from '../components/HeroIcon';
 import Button from '../components/Button';
+import { Bars3Icon, BellIcon, ArrowRightOnRectangleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
 const RestaurantOwnerLayout = () => {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
@@ -53,7 +53,7 @@ const RestaurantOwnerLayout = () => {
     // If still no current restaurant after loading and checks (e.g., not assigned by admin yet)
     return (
         <div className="flex flex-col justify-center items-center h-screen bg-gray-100 dark:bg-gray-900 p-8 text-center">
-            <HeroIcon icon="ExclamationTriangleIcon" className="h-16 w-16 text-yellow-500 mb-4"/>
+            <ExclamationTriangleIcon className="h-16 w-16 text-yellow-500 mb-4"/>
             <h1 className="text-2xl font-semibold text-gray-800 dark:text-white mb-2">Restoranti Nuk u Gjet</h1>
             <p className="text-gray-600 dark:text-gray-400">
                 Duket se nuk keni një restorant të caktuar në llogarinë tuaj. <br/>
@@ -86,7 +86,7 @@ const RestaurantOwnerLayout = () => {
                   className="md:hidden text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500 mr-3"
                   aria-label="Hap menunë anësore"
                 >
-                  <HeroIcon icon="Bars3Icon" className="h-6 w-6" />
+                  <Bars3Icon className="h-6 w-6" />
                 </button>
                 <div className="text-lg font-semibold text-gray-800 dark:text-white hidden md:block truncate" title={currentRestaurant.name}>
                   Paneli: {currentRestaurant.name}
@@ -96,7 +96,7 @@ const RestaurantOwnerLayout = () => {
               <div className="flex items-center space-x-3">
                  {/* Placeholder for notifications or quick actions */}
                 <button className="relative text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" aria-label="Njoftimet e Restorantit">
-                    <HeroIcon icon="BellIcon" className="h-6 w-6" />
+                    <BellIcon className="h-6 w-6" />
                     {/* <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-gray-800"></span> Example notification dot */}
                 </button>
                 <Button 
@@ -104,7 +104,7 @@ const RestaurantOwnerLayout = () => {
                   variant="ghost"
                   size="sm"
                   className="text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  iconLeft={<HeroIcon icon="ArrowRightOnRectangleIcon" className="h-5 w-5"/>}
+                  iconLeft={<ArrowRightOnRectangleIcon className="h-5 w-5"/>}
                 >
                   <span className="hidden sm:inline">Dilni</span>
                 </Button>

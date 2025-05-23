@@ -4,7 +4,10 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext.jsx';
 import { useNotification } from '../../../context/NotificationContext.jsx';
 import { restaurantApi } from '../../../api/restaurantApi.js';
-import HeroIcon from '../../../components/HeroIcon.jsx'; // Duke përdorur HeroIcon për konsistencë
+import { 
+    HomeIcon, ShoppingCartIcon, QueueListIcon, Cog6ToothIcon, StarIcon, ChartBarIcon, 
+    ShieldCheckIcon, XMarkIcon, UserCircleIcon, ChevronUpIcon, ChevronDownIcon, ArrowRightOnRectangleIcon 
+} from '@heroicons/react/24/outline';
 
 const Sidebar = ({ isSidebarOpen, setIsSidebarOpen: setIsMobileSidebarOpen }) => { // Renamed prop for clarity
   const { user, token, currentRestaurant, selectRestaurant, logout: authLogout } = useAuth();
@@ -30,12 +33,12 @@ const Sidebar = ({ isSidebarOpen, setIsSidebarOpen: setIsMobileSidebarOpen }) =>
   const activeSection = getActiveSection(location.pathname);
 
   const navItems = [
-    { id: 'overview', label: 'Pasqyra', iconName: 'HomeIcon', path: 'overview' }, // Relative paths
-    { id: 'orders', label: 'Porositë', iconName: 'ShoppingCartIcon', count: pendingOrdersCount, path: 'orders' },
-    { id: 'menu', label: 'Menuja', iconName: 'QueueListIcon', path: 'menu' },
-    { id: 'settings', label: 'Konfigurimet', iconName: 'Cog6ToothIcon', path: 'settings' },
-    { id: 'reviews', label: 'Vlerësimet', iconName: 'StarIcon', path: 'reviews' },
-    { id: 'analytics', label: 'Analitika', iconName: 'ChartBarIcon', path: 'analytics' },
+    { id: 'overview', label: 'Pasqyra', IconComponent: HomeIcon, path: 'overview' }, // Relative paths
+    { id: 'orders', label: 'Porositë', IconComponent: ShoppingCartIcon, count: pendingOrdersCount, path: 'orders' },
+    { id: 'menu', label: 'Menuja', IconComponent: QueueListIcon, path: 'menu' },
+    { id: 'settings', label: 'Konfigurimet', IconComponent: Cog6ToothIcon, path: 'settings' },
+    { id: 'reviews', label: 'Vlerësimet', IconComponent: StarIcon, path: 'reviews' },
+    { id: 'analytics', label: 'Analitika', IconComponent: ChartBarIcon, path: 'analytics' },
   ];
   
   const fetchPendingOrders = useCallback(async () => {
@@ -112,7 +115,7 @@ const Sidebar = ({ isSidebarOpen, setIsSidebarOpen: setIsMobileSidebarOpen }) =>
                 className="absolute top-4 right-4 md:hidden text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                 aria-label="Mbyll menunë anësore"
             >
-                <HeroIcon icon="XMarkIcon" className="h-6 w-6" />
+                <XMarkIcon className="h-6 w-6" />
             </button>
         </Link>
       
@@ -146,8 +149,11 @@ const Sidebar = ({ isSidebarOpen, setIsSidebarOpen: setIsMobileSidebarOpen }) =>
                     : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
                 }`}
             >
-                {item.iconName && (
-                <HeroIcon icon={item.iconName} className={`w-5 h-5 mr-3 flex-shrink-0 ${activeSection !== item.id ? 'text-gray-400 dark:text-gray-500 group-hover:text-primary-500 dark:group-hover:text-primary-400' : 'text-white'}`} />
+                {item.IconComponent && (
+                <item.IconComponent 
+                  className={`flex-shrink-0 h-5 w-5 
+                              ${activeSection !== item.id ? 'text-gray-400 dark:text-gray-500 group-hover:text-primary-500 dark:group-hover:text-primary-400' : 'text-white'}`} 
+                />
                 )}
                 <span className="truncate flex-grow">{item.label}</span>
                 {item.id === 'orders' && item.count > 0 && (
@@ -163,21 +169,21 @@ const Sidebar = ({ isSidebarOpen, setIsSidebarOpen: setIsMobileSidebarOpen }) =>
             <div className="relative">
             <button onClick={() => setIsProfileDropdownOpen(prev => !prev)} className="w-full flex items-center p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 text-left focus:outline-none focus:ring-1 focus:ring-primary-500 dark:focus:ring-primary-400">
                 <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-gray-200 dark:bg-gray-600 mr-2.5 flex-shrink-0">
-                    <HeroIcon icon="UserCircleIcon" className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                    <UserCircleIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                 </span>
                 <div className="flex-grow min-w-0">
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">{user?.username || 'Pronar'}</p>
                     {/* <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email}</p> */}
                 </div>
-                <HeroIcon icon={isProfileDropdownOpen ? "ChevronUpIcon" : "ChevronDownIcon"} className="w-4 h-4 text-gray-400 dark:text-gray-500 ml-1 flex-shrink-0" />
+                {isProfileDropdownOpen ? <ChevronUpIcon className="w-4 h-4 text-gray-400 dark:text-gray-500 ml-1 flex-shrink-0" /> : <ChevronDownIcon className="w-4 h-4 text-gray-400 dark:text-gray-500 ml-1 flex-shrink-0" />}
             </button>
             {isProfileDropdownOpen && (
                 <div className="absolute bottom-full left-0 right-0 mb-1.5 bg-white dark:bg-gray-700 rounded-md shadow-lg ring-1 ring-black/5 py-1 z-20">
                 <Link to="settings" onClick={() => { setIsProfileDropdownOpen(false); handleLinkClick(); }} className="w-full text-left block px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center">
-                    <HeroIcon icon="Cog6ToothIcon" className="inline w-4 h-4 mr-2 text-gray-400 dark:text-gray-500" /> Profili & Konfigurimet
+                    <Cog6ToothIcon className="inline w-4 h-4 mr-2 text-gray-400 dark:text-gray-500" /> Profili & Konfigurimet
                 </Link>
                 <button onClick={handleLogout} className="w-full text-left block px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-700 dark:hover:text-red-300 flex items-center">
-                    <HeroIcon icon="ArrowRightOnRectangleIcon" className="inline w-4 h-4 mr-2" /> Dilni
+                    <ArrowRightOnRectangleIcon className="inline w-4 h-4 mr-2" /> Dilni
                 </button>
                 </div>
             )}

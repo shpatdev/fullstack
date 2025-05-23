@@ -2,53 +2,60 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { customerApi } from '../../../api/customerApi.js';
-import HeroIcon from '../../../components/HeroIcon.jsx';
+import { ArrowLeftIcon, MapPinIcon, StarIcon, ClockIcon, CurrencyDollarIcon as CurrencyEuroIcon } from '@heroicons/react/24/outline';
 import MenuItemCard from '../components/MenuItemCard.jsx';
-import Button from '../../../components/Button.jsx'; // Nëse shton butona shtesë
+import Button from "../../../components/Button.jsx";
+import ReviewCard from "../components/ReviewCard.jsx";
+import ReviewForm from "../components/ReviewForm.jsx";
+import { useAuth } from "../../../context/AuthContext.jsx";
+import { useCart } from '../../../context/CartContext.jsx';
 
 const RestaurantDetailPage = () => {
   const { restaurantId } = useParams();
   const [restaurant, setRestaurant] = useState(null);
-  const [menuItems, setMenuItems] = useState([]);
+  const [menuCategories, setMenuCategories] = useState([]);
+  const [reviews, setReviews] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeCategory, setActiveCategory] = useState('ALL'); // Default 'ALL'
+  const { addItemToCart } = useCart();
+  const { isAuthenticated, user } = useAuth();
+  const [showReviewForm, setShowReviewForm] = useState(false);
 
   const fetchRestaurantData = useCallback(async () => {
-    if (!restaurantId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const [restaurantData, menuData] = await Promise.all([
-        customerApi.fetchRestaurantById(restaurantId),
-        customerApi.fetchMenuItemsForRestaurant(restaurantId)
+      const [detailsData, menuData, reviewsData] = await Promise.all([
+        customerApi.fetchRestaurantDetails(restaurantId),
+        customerApi.fetchRestaurantMenu(restaurantId),
+        customerApi.fetchRestaurantReviews(restaurantId)
       ]);
-      setRestaurant(restaurantData);
-      setMenuItems(menuData || []);
-      // Extract unique categories from menuData for filter buttons
-      // const categories = new Set((menuData || []).map(item => item.category?.name).filter(Boolean));
-      // setUniqueCategoryNames(['ALL', ...Array.from(categories).sort()]);
+      setRestaurant(detailsData);
+      setMenuCategories(menuData || []);
+      setReviews(reviewsData.results || reviewsData || []);
     } catch (err) {
-      setError(err.message || "Problem në ngarkimin e detajeve.");
+      console.error("Failed to fetch restaurant data:", err);
+      setError(err.message || "Problem në ngarkimin e detajeve të restorantit.");
     } finally {
       setIsLoading(false);
     }
   }, [restaurantId]);
 
-  useEffect(() => { fetchRestaurantData(); }, [fetchRestaurantData]);
+  useEffect(() => {
+    fetchRestaurantData();
+  }, [fetchRestaurantData]);
 
-  const menuCategories = menuItems.reduce((acc, item) => {
-    const categoryName = item.category?.name || 'Të tjera';
-    if (!acc[categoryName]) acc[categoryName] = [];
-    acc[categoryName].push(item);
-    return acc;
-  }, {});
+  const handleReviewSubmitted = (newReview) => {
+    setReviews(prevReviews => [newReview, ...prevReviews]);
+    setShowReviewForm(false);
+  };
   
-  const uniqueCategoryNamesForFilter = ['ALL', ...Object.keys(menuCategories).sort()];
-
-  const filteredMenuItemsForDisplay = activeCategory === 'ALL'
-    ? menuItems // Show all items if 'ALL' is selected or no category selected
-    : menuCategories[activeCategory] || []; // Show items of the active category
+  const canLeaveReview = () => {
+    if (!isAuthenticated || !user || !restaurant) return false;
+    const existingReview = reviews.find(review => review.user === user.id || review.user?.id === user.id);
+    if (existingReview) return false;
+    return true; 
+  };
 
 
   if (isLoading) {
@@ -61,19 +68,20 @@ const RestaurantDetailPage = () => {
   }
 
   if (error) {
-    return <div className="text-center text-red-500 dark:text-red-400 py-10 text-xl px-4 bg-red-50 dark:bg-red-900/30 rounded-lg">{error}</div>;
+    return <div className="text-center text-red-500 dark:text-red-400 py-10 text-xl bg-red-50 dark:bg-red-900/30 rounded-lg">{error}</div>;
   }
+
   if (!restaurant) {
-    return <div className="text-center text-gray-600 dark:text-gray-300 py-10 text-xl">Restoranti nuk u gjet.</div>;
+    return <div className="text-center text-gray-600 dark:text-slate-300 py-10 text-xl">Restoranti nuk u gjet.</div>;
   }
   
-  const displayImage = restaurant.image || `https://placehold.co/1200x400/FDC830/78350F?text=${encodeURIComponent(restaurant.name)}`;
+  const displayImage = restaurant.main_image_url || `https://placehold.co/1200x400/FDC830/78350F?text=${encodeURIComponent(restaurant.name)}`;
 
   return (
     <div className="container mx-auto px-2 sm:px-0 py-2">
       <div className="mb-1">
         <Link to="/customer/restaurants" className="inline-flex items-center text-sm text-primary-600 dark:text-primary-400 hover:underline">
-          <HeroIcon icon="ArrowLeftIcon" className="h-4 w-4 mr-1.5" /> Kthehu te Lista
+          <ArrowLeftIcon className="h-4 w-4 mr-1.5" /> Kthehu te Lista
         </Link>
       </div>
       <header className="mb-8 relative">
@@ -85,87 +93,94 @@ const RestaurantDetailPage = () => {
             <div>
                 <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-800 dark:text-white mb-1.5">{restaurant.name}</h1>
                 <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 mb-1">
-                    {restaurant.categories?.map(cat => cat.name).join(' • ') || 'Pa kategori'}
+                    {restaurant.cuisine_types?.map(cat => cat.name).join(' • ') || 'Pa kategori'}
                 </p>
                 <p className="text-xs sm:text-sm text-gray-600 dark:text-slate-300 flex items-center mb-2 sm:mb-3">
-                    <HeroIcon icon="MapPinIcon" className="h-4 w-4 mr-1.5 text-gray-400 dark:text-slate-500" /> {restaurant.address}
+                    <MapPinIcon className="h-4 w-4 mr-1.5 text-gray-400 dark:text-slate-500" /> 
+                    {restaurant.address_summary || restaurant.address?.street || 'Adresë e panjohur'}
                 </p>
                 <div className="flex items-center space-x-3 sm:space-x-4 text-xs sm:text-sm">
-                    {restaurant.average_rating && (
+                    {restaurant.average_rating && parseFloat(restaurant.average_rating) > 0 && (
                         <div className="flex items-center text-gray-700 dark:text-slate-300">
-                            <HeroIcon icon="StarIcon" className="h-4 sm:h-5 w-4 sm:w-5 text-yellow-400 mr-1" />
-                            <span className="font-semibold">{restaurant.average_rating.toFixed(1)}</span>
+                            <StarIcon className="h-4 sm:h-5 w-4 sm:w-5 text-yellow-400 mr-1" />
+                            <span className="font-semibold">{parseFloat(restaurant.average_rating).toFixed(1)}</span>
+                            <span className="ml-1 text-gray-500 dark:text-slate-400">({restaurant.review_count || 0} vlerësime)</span>
                         </div>
                     )}
-                    {restaurant.delivery_time_estimate && (
+                    {restaurant.delivery_time_estimate_display && (
                         <div className="flex items-center text-gray-700 dark:text-slate-300">
-                            <HeroIcon icon="ClockIcon" className="h-4 sm:h-5 w-4 sm:w-5 text-primary-500 dark:text-primary-400 mr-1.5" />
-                            <span className="font-medium">{restaurant.delivery_time_estimate}</span>
+                            <ClockIcon className="h-4 sm:h-5 w-4 sm:w-5 text-primary-500 dark:text-primary-400 mr-1.5" />
+                            <span className="font-medium">{restaurant.delivery_time_estimate_display}</span>
                         </div>
                     )}
-                     {restaurant.priceRange && (
+                     {restaurant.price_range_display && (
                         <div className="flex items-center text-gray-700 dark:text-slate-300">
-                            <HeroIcon icon="CurrencyEuroIcon" className="h-4 sm:h-5 w-4 sm:w-5 text-green-500 dark:text-green-400 mr-1.5" />
-                            <span className="font-medium">{restaurant.priceRange}</span>
+                            <CurrencyEuroIcon className="h-4 sm:h-5 w-4 sm:w-5 text-green-500 dark:text-green-400 mr-1.5" />
+                            <span className="font-medium">{restaurant.price_range_display}</span>
                         </div>
                     )}
                 </div>
             </div>
         </div>
         {restaurant.description && (
-            <div className="max-w-3xl mx-auto mt-4 sm:mt-6 text-center text-sm sm:text-base text-gray-600 dark:text-slate-300 px-4">
-                <p>{restaurant.description}</p>
+            <div className="max-w-3xl mx-auto mt-4 p-4 bg-white dark:bg-slate-800 rounded-lg shadow">
+                <h3 className="text-md font-semibold text-gray-700 dark:text-slate-200 mb-1.5">Rreth Restorantit</h3>
+                <p className="text-sm text-gray-600 dark:text-slate-300 leading-relaxed">{restaurant.description}</p>
             </div>
         )}
       </header>
-
-      <section className="mt-4">
-        <div className="flex justify-between items-center mb-4 sm:mb-6 px-2 sm:px-0">
-          <h2 className="text-xl sm:text-2xl font-semibold text-gray-800 dark:text-white">Menuja e Restorantit</h2>
-          {/* Dropdown for category filter on mobile, buttons on larger screens */}
-        </div>
-        
-        {uniqueCategoryNamesForFilter.length > 1 && (
-          <div className="mb-6 sm:mb-8 px-2 sm:px-0 overflow-x-auto pb-2 custom-scrollbar-thin">
-            <div className="flex space-x-2 sm:space-x-3 whitespace-nowrap">
-              {uniqueCategoryNamesForFilter.map(categoryName => (
-                <Button key={categoryName} onClick={() => setActiveCategory(categoryName)}
-                  variant={activeCategory === categoryName ? 'primary' : 'outline'}
-                  size="sm" className={`transition-all duration-150 ${activeCategory === categoryName ? 'shadow-md' : 'dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700'}`}
-                > {categoryName} </Button>
-              ))}
+      
+      {/* Menu Section */}
+      <section className="mb-6 sm:mb-8">
+        <h2 className="text-xl sm:text-2xl font-semibold text-gray-700 dark:text-slate-200 mb-4">Menuja</h2>
+        {menuCategories && menuCategories.length > 0 ? (
+          menuCategories.map(category => (
+            <div key={category.id} className="mb-6">
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-600 dark:text-slate-300 mb-3 border-b pb-1 dark:border-slate-700">{category.name}</h3>
+              {category.menu_items && category.menu_items.filter(item => item.is_available).length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {category.menu_items.filter(item => item.is_available).map(item => (
+                    <MenuItemCard key={item.id} item={item} onAddToCart={() => addItemToCart(item, 1, restaurant.id)} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-slate-400">Nuk ka artikuj të disponueshëm në këtë kategori.</p>
+              )}
             </div>
+          ))
+        ) : (
+          <p className="text-gray-600 dark:text-slate-400">Menuja për këtë restorant nuk është e disponueshme ende.</p>
+        )}
+      </section>
+
+      {/* Reviews Section */}
+      <section>
+        <h2 className="text-xl sm:text-2xl font-semibold text-gray-700 dark:text-slate-200 mb-4">Vlerësimet e Klientëve</h2>
+        {isAuthenticated && canLeaveReview() && !showReviewForm && (
+          <div className="mb-4">
+            <Button onClick={() => setShowReviewForm(true)} variant="primary">
+              Lini një Vlerësim
+            </Button>
           </div>
         )}
-
-        {menuItems.length > 0 ? (
-          activeCategory === 'ALL' ? (
-            Object.entries(menuCategories).sort(([keyA], [keyB]) => keyA.localeCompare(keyB)).map(([category, itemsInSection]) => (
-              <div key={category} className="mb-8">
-                  <h3 className="text-lg sm:text-xl font-semibold text-gray-700 dark:text-slate-200 mb-3 sm:mb-4 px-2 sm:px-0 border-b border-gray-200 dark:border-slate-700 pb-2">{category} ({itemsInSection.length})</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-5 px-1 sm:px-0">
-                      {itemsInSection.map(item => <MenuItemCard key={item.id} item={item} />)}
-                  </div>
-              </div>
-            ))
-          ) : (
-            filteredMenuItemsForDisplay.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-5 px-1 sm:px-0">
-                {filteredMenuItemsForDisplay.map(item => <MenuItemCard key={item.id} item={item} />)}
-              </div>
-            ) : (
-              <p className="text-center text-gray-500 dark:text-slate-400 py-8">Nuk ka artikuj në kategorinë "{activeCategory}".</p>
-            )
-          )
+        {showReviewForm && (
+          <ReviewForm 
+            restaurantId={restaurantId} 
+            onReviewSubmitted={handleReviewSubmitted}
+            onCancel={() => setShowReviewForm(false)} 
+          />
+        )}
+        {reviews && reviews.length > 0 ? (
+          <div className="space-y-4">
+            {reviews.map(review => (
+              <ReviewCard key={review.id} review={review} />
+            ))}
+          </div>
         ) : (
-            <div className="text-center py-10 min-h-[200px] flex flex-col justify-center items-center bg-white dark:bg-slate-800 rounded-lg shadow">
-                <HeroIcon icon="ArchiveBoxXMarkIcon" className="h-12 w-12 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
-                <p className="text-gray-600 dark:text-slate-300 text-lg">Ky restorant nuk ka ende menu.</p>
-            </div>
+          <p className="text-gray-600 dark:text-slate-400">Nuk ka ende vlerësime për këtë restorant.</p>
         )}
       </section>
     </div>
   );
 };
-
 export default RestaurantDetailPage;

@@ -1,22 +1,20 @@
-// src/modules/admin/components/AdminSidebar.jsx
-import React, { useState, useEffect, useRef } from 'react';
-import { NavLink, Link, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../../context/AuthContext';
+import React, { useState } from 'react';
+import { NavLink, Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { 
     HomeIcon, UsersIcon, BuildingStorefrontIcon, Cog6ToothIcon, ChartBarIcon, 
-    ShieldCheckIcon, ArrowRightOnRectangleIcon, ChevronDownIcon, ChevronUpIcon, TagIcon, ListBulletIcon, XMarkIcon 
+    ShieldCheckIcon, ArrowRightOnRectangleIcon, ChevronDownIcon, ChevronUpIcon, TagIcon, ListBulletIcon
 } from '@heroicons/react/24/outline';
+// import Button from '../components/Button'; // If needed for logout or other actions
 
 const AdminSidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
-    const location = useLocation();
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
-    const profileDropdownRef = useRef(null);
 
     const handleLogout = async () => {
         await logout();
-        navigate('/auth/login');
+        navigate('/login');
     };
     
     const navItems = [
@@ -26,29 +24,18 @@ const AdminSidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
         { name: 'Llojet e Kuzhinave', href: '/admin/cuisine-types', IconComponent: TagIcon },
         { name: 'Porositë', href: '/admin/orders', IconComponent: ListBulletIcon },
         { name: 'Analitika', href: '/admin/analytics', IconComponent: ChartBarIcon },
-        { name: 'Konfigurimet', href: '/admin/settings', IconComponent: Cog6ToothIcon },
+        { name: 'Konfigurime', href: '/admin/settings', IconComponent: Cog6ToothIcon },
     ];
 
     const handleLinkClick = () => {
-        if (window.innerWidth < 768) { 
+        if (window.innerWidth < 768) { // md breakpoint
           setIsSidebarOpen(false);
         }
     };
 
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target)) {
-                setIsProfileDropdownOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, []);
-
     return (
         <>
+            {/* Overlay for mobile */}
             {isSidebarOpen && (
                 <div 
                   className="fixed inset-0 z-30 bg-black/30 md:hidden" 
@@ -56,7 +43,7 @@ const AdminSidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
                   aria-hidden="true"
                 ></div>
             )}
-            <aside className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-slate-800 text-slate-100 shadow-lg transition-transform duration-300 ease-in-out md:relative md:translate-x-0 print:hidden
+            <aside className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-slate-800 text-slate-100 shadow-lg transition-transform duration-300 ease-in-out md:relative md:translate-x-0
                 ${isSidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full w-64 md:w-20'}`}
             >
                 <div className={`flex items-center justify-between p-4 border-b border-slate-700 ${isSidebarOpen ? '' : 'md:justify-center'}`}>
@@ -64,13 +51,7 @@ const AdminSidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
                         <ShieldCheckIcon className={`h-8 w-8 text-primary-400 ${isSidebarOpen ? '' : 'md:h-7 md:w-7'}`} />
                         {isSidebarOpen && <span className="text-xl font-bold">Admin</span>}
                     </Link>
-                    <button
-                        onClick={() => setIsSidebarOpen(false)}
-                        className={`text-slate-300 hover:text-white md:hidden ${!isSidebarOpen ? 'hidden' : ''}`}
-                        aria-label="Mbyll sidebar"
-                    >
-                        <XMarkIcon className="h-6 w-6" />
-                    </button>
+                    {/* Mobile close button can be added here if needed, or handled by AdminLayout */}
                 </div>
 
                 <nav className="flex-1 overflow-y-auto py-4 space-y-1">
@@ -79,27 +60,22 @@ const AdminSidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
                             key={item.name}
                             to={item.href}
                             onClick={handleLinkClick}
-                            className={({ isActive: navLinkIsActive }) =>
+                            className={({ isActive }) =>
                                 `group flex items-center px-4 py-2.5 text-sm font-medium rounded-md mx-2 transition-colors
-                                ${navLinkIsActive 
+                                ${isActive
                                     ? 'bg-primary-500 text-white'
-                                    : 'hover:bg-slate-700 hover:text-white text-slate-300'}
+                                    : 'hover:bg-slate-700 hover:text-white'}
                                 ${!isSidebarOpen ? 'md:justify-center md:px-0 md:py-3 md:mx-auto md:w-12 md:h-12' : ''}`
                             }
                             title={isSidebarOpen ? '' : item.name}
                         >
-                            <item.IconComponent 
-                                className={`h-5 w-5 flex-shrink-0 
-                                           ${isSidebarOpen ? 'mr-3' : 'md:mr-0'} 
-                                           ${/* Ngjyra e ikonës tani kontrollohet nga klasat e NavLink-ut prind (p.sh. text-white kur aktiv) */ ''}`
-                                         } 
-                            />
+                            <item.IconComponent className={`h-5 w-5 flex-shrink-0 ${isSidebarOpen ? 'mr-3' : 'md:mr-0'}`} />
                             {isSidebarOpen && <span>{item.name}</span>}
                         </NavLink>
                     ))}
                 </nav>
 
-                <div className="p-2 border-t border-slate-700" ref={profileDropdownRef}>
+                <div className="p-2 border-t border-slate-700">
                     <div className="relative">
                         <button
                             onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
@@ -108,31 +84,31 @@ const AdminSidebar = ({ isSidebarOpen, setIsSidebarOpen }) => {
                             title={isSidebarOpen ? '' : (user?.first_name || user?.email)}
                         >
                              <img 
-                                src={user?.profile_picture_url || `https://ui-avatars.com/api/?name=${user?.first_name || 'A'}&background=3B82F6&color=fff&size=128`}
+                                src={user?.profile_picture_url || `https://ui-avatars.com/api/?name=${user?.first_name || 'A'}&background=0D8ABC&color=fff&size=128`} 
                                 alt="Admin" 
                                 className={`h-8 w-8 rounded-full object-cover flex-shrink-0 ${isSidebarOpen ? 'mr-2.5' : 'md:mr-0'}`} 
                             />
                             {isSidebarOpen && (
                                 <>
                                     <span className="truncate flex-1">{user?.first_name || user?.email}</span>
-                                    {isProfileDropdownOpen ? <ChevronUpIcon className="w-4 h-4 ml-1 flex-shrink-0 text-slate-400" /> : <ChevronDownIcon className="w-4 h-4 ml-1 flex-shrink-0 text-slate-400" />}
+                                    {isProfileDropdownOpen ? <ChevronUpIcon className="w-4 h-4 ml-1 flex-shrink-0" /> : <ChevronDownIcon className="w-4 h-4 ml-1 flex-shrink-0" />}
                                 </>
                             )}
                         </button>
                         {isProfileDropdownOpen && isSidebarOpen && (
-                            <div className="absolute bottom-full left-0 mb-1 py-1 w-full rounded-md bg-slate-700 shadow-xs ring-1 ring-black ring-opacity-5">
+                            <div className="mt-1 py-1 w-full rounded-md bg-slate-700 shadow-xs ring-1 ring-black ring-opacity-5">
                                 <NavLink
-                                    to="/admin/settings"
+                                    to="/admin/profile" // Or /admin/settings if that's the profile page
                                     onClick={() => { setIsProfileDropdownOpen(false); handleLinkClick(); }}
-                                    className={({isActive}) => `block px-3 py-2 text-sm hover:bg-slate-600 flex items-center ${isActive ? 'text-primary-300' : 'text-slate-100'}`}
+                                    className={({isActive}) => `block px-3 py-2 text-sm hover:bg-slate-600 flex items-center ${isActive ? 'text-primary-300' : ''}`}
                                 >
-                                    <Cog6ToothIcon className="inline w-4 h-4 mr-2 text-slate-400" /> Profili & Konfigurime
+                                    <Cog6ToothIcon className="inline w-4 h-4 mr-2" /> Profili
                                 </NavLink>
                                 <button
                                     onClick={() => { handleLogout(); setIsProfileDropdownOpen(false); }}
-                                    className="w-full text-left block px-3 py-2 text-sm hover:bg-slate-600 flex items-center text-slate-100"
+                                    className="w-full text-left block px-3 py-2 text-sm hover:bg-slate-600 flex items-center"
                                 >
-                                    <ArrowRightOnRectangleIcon className="inline w-4 h-4 mr-2 text-slate-400" /> Dilni
+                                    <ArrowRightOnRectangleIcon className="inline w-4 h-4 mr-2" /> Dilni
                                 </button>
                             </div>
                         )}

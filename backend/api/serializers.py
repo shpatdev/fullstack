@@ -2,10 +2,11 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer as BaseTokenObtainPairSerializer
+from rest_framework_simplejwt.exceptions import AuthenticationFailed # Importo këtë
 from .models import Order, OrderItem # Shto importet
 from .models import (
     Address, CuisineType, Restaurant, OperatingHours, 
-    MenuCategory, MenuItem, Review, DriverProfile # Shto DriverProfile
+    MenuCategory, MenuItem, Review, DriverProfile, ReviewReply # Shto DriverProfile dhe ReviewReply
 )
 
 User = get_user_model()
@@ -249,14 +250,23 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
         return instance
 
 
+class ReviewReplySerializer(serializers.ModelSerializer):
+    user = UserDetailSerializer(read_only=True) 
+
+    class Meta:
+        model = ReviewReply
+        fields = ['id', 'user', 'text', 'created_at', 'updated_at'] 
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+
 class ReviewSerializer(serializers.ModelSerializer):
     user = UserDetailSerializer(read_only=True)
+    replies = ReviewReplySerializer(many=True, read_only=True) 
     # restaurant = RestaurantListSerializer(read_only=True) # Opsionale, mund të jetë e tepërt nëse është nested
 
     class Meta:
         model = Review
-        fields = ['id', 'user', 'restaurant', 'rating', 'comment', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'user', 'restaurant', 'created_at', 'updated_at']
+        fields = ['id', 'user', 'restaurant', 'rating', 'comment', 'created_at', 'updated_at', 'replies']
+        read_only_fields = ['id', 'user', 'restaurant', 'created_at', 'updated_at', 'replies']
         # 'restaurant' do të merret nga URL (nested view)
         # 'user' do të merret nga request.user
 
@@ -319,12 +329,65 @@ class CustomTokenObtainPairSerializer(BaseTokenObtainPairSerializer):
         return token
 
     def validate(self, attrs):
-        data = super().validate(attrs)
-        # self.user vendoset nga metoda validate e klasës prind
-        user_detail_serializer = UserDetailSerializer(self.user)
-        data['user'] = user_detail_serializer.data
-        return data
+        # Tento të marrësh email dhe password
+        email = attrs.get('email')
+        password = attrs.get('password')
 
+        if not email or not password:
+            # Ky rast zakonisht nuk duhet të ndodhë pasi DRF i bën fushat required
+            # por si masë sigurie
+            raise serializers.ValidationError(
+                {"detail": "Email dhe fjalëkalimi janë të detyrueshëm."},
+                code="authorization" # Mund të shtosh një kod gabimi
+            )
+        
+        # Printo për debugim vetëm nëse ke probleme
+        # print(f"CustomTokenObtainPairSerializer attempting to validate attrs: {attrs}")
+
+        try:
+            # super().validate(attrs) do të thërrasë authenticate()
+            # dhe do të hedhë AuthenticationFailed nëse kredencialet janë të gabuara
+            # ose useri nuk është aktiv.
+            data = super().validate(attrs)
+        except AuthenticationFailed as e:
+            # Kap AuthenticationFailed dhe rihidhe për t'u siguruar që DRF e trajton si JSON
+            # print(f"AuthenticationFailed in CustomTokenObtainPairSerializer: {str(e.detail)}")
+            raise AuthenticationFailed(e.detail, e.status_code if hasattr(e, 'status_code') else 'invalid_credentials')
+        except Exception as e:
+            # Për gabime të tjera të papritura gjatë validimit të prindit
+            # print(f"Unexpected error during super().validate in CustomTokenObtainPairSerializer: {e}")
+            # Kthe një gabim të përgjithshëm, por sigurohu që është ValidationError ose i ngjashëm
+            raise serializers.ValidationError(
+                {"detail": "Gabim i papritur gjatë procesit të login."},
+                code="server_error"
+            )
+
+        # Në këtë pikë, self.user duhet të jetë vendosur nga super().validate()
+        if not hasattr(self, 'user') or not self.user:
+            # Ky është një rast i pazakontë nëse super().validate nuk ka hedhur gabim
+            # print("CRITICAL: User object not set on serializer after successful super().validate()")
+            raise AuthenticationFailed( # Përdor AuthenticationFailed për konsistencë
+                {"detail": "Konfigurim i gabuar i autentikimit."}, 
+                code="authentication_setup_error"
+            )
+
+        # Krijo tokenat (refresh dhe access)
+        # refresh = self.get_token(self.user) # Kjo thirrje është tashmë bërë nga super().validate() dhe rezultati është te data
+        # data['refresh'] = str(refresh)
+        # data['access'] = str(refresh.access_token)
+        # Linjat e mësipërme janë të sakta, por 'data' nga super().validate() tashmë përmban 'refresh' dhe 'access'
+        # kështu që nuk ka nevojë t'i gjenerojmë përsëri, vetëm t'i shtojmë fushat tona.
+
+        # Shto detajet e plota të përdoruesit
+        # Sigurohu që context kalohet nëse UserDetailSerializer e pret (p.sh., për HyperlinkedRelatedField ose SerializerMethodField që përdorin request)
+        user_serializer_context = {}
+        if self.context and 'request' in self.context: # Kontrollo nëse context ekziston dhe ka 'request'
+            user_serializer_context = {'request': self.context.get('request')}
+        
+        data['user'] = UserDetailSerializer(self.user, context=user_serializer_context).data
+        
+        # print(f"CustomTokenObtainPairSerializer validate data to return: {data}")
+        return data
 
 
 class OrderItemSerializer(serializers.ModelSerializer):

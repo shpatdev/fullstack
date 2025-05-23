@@ -1,7 +1,7 @@
 // src/modules/admin/pages/AdminSettingsPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import Button from '../../../components/Button';
-import HeroIcon from '../../../components/HeroIcon';
+import { IdentificationIcon, BanknotesIcon, MegaphoneIcon, TagIcon, CheckCircleIcon, ArrowPathIcon, Cog6ToothIcon, ExclamationTriangleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import { adminApi } from '../../../api/adminApi'; // Using mock API
 import { useAuth } from '../../../context/AuthContext';
 import { useNotification } from '../../../context/NotificationContext';
@@ -130,7 +130,7 @@ const AdminSettingsPage = () => {
 
       <form onSubmit={handleSaveSettings} className="bg-white dark:bg-gray-800 shadow-xl rounded-xl p-6 md:p-8 space-y-8">
         
-        <SettingSection title="Informacionet Bazë të Platformës" icon="IdentificationIcon">
+        <SettingSection title="Informacionet Bazë të Platformës" description="Emri dhe logoja e platformës." icon={IdentificationIcon}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                 <div>
                     <label htmlFor="platformName" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Emri i Platformës</label>
@@ -144,7 +144,7 @@ const AdminSettingsPage = () => {
             </div>
         </SettingSection> {/* Correctly closed */}
 
-        <SettingSection title="Konfigurime Financiare & Dërgesash" icon="BanknotesIcon">
+        <SettingSection title="Financat & Pagesat" description="Konfigurime për monedhën, tarifat, etj." icon={BanknotesIcon}>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
             <div>
               <label htmlFor="commissionRate" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Norma e Komisionit (0.0 - 1.0)</label>
@@ -164,7 +164,7 @@ const AdminSettingsPage = () => {
           </div>
         </SettingSection> {/* Correctly closed */}
 
-        <SettingSection title="Njoftime & Mirëmbajtje" icon="MegaphoneIcon">
+        <SettingSection title="Njoftimet & Marketingu" description="Menaxho shabllonet e email-eve dhe fushatat." icon={MegaphoneIcon}>
           <div>
             <label htmlFor="globalAnnouncement" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Njoftim Global (shfaqet në krye)</label>
             <textarea name="globalAnnouncement" id="globalAnnouncement" rows="3" value={settings.globalAnnouncement} onChange={handleChange} className="input-form" placeholder="Shkruani njoftimin tuaj këtu..."></textarea>
@@ -178,7 +178,7 @@ const AdminSettingsPage = () => {
             {settings.maintenanceMode && <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">Kujdes: Aktivizimi i këtij modi do të kufizojë aksesin në platformë për përdoruesit e rregullt.</p>}
         </SettingSection> {/* Correctly closed */}
         
-         <SettingSection title="Menaxhimi i Kategorive Globale të Restoranteve" icon="TagIcon">
+         <SettingSection title="Kategoritë & Etiketat" description="Menaxho llojet e kuzhinave dhe etiketat e tjera." icon={TagIcon}>
             <p className="text-sm text-gray-600 dark:text-gray-400">Ky seksion do të lejojë shtimin, modifikimin, dhe fshirjen e kategorive globale të kuzhinës (p.sh., "Italiane", "Kineze", "Tradicionale") që restorantet mund të zgjedhin.</p>
             <div className="mt-3">
                  <span className="text-xs italic text-gray-500 dark:text-gray-400">(Funksionalitet në zhvillim)</span>
@@ -187,7 +187,7 @@ const AdminSettingsPage = () => {
 
         <div className="pt-6 flex justify-end border-t border-gray-200 dark:border-gray-700">
           <Button type="submit" variant="primary" size="lg" isLoading={isLoading} disabled={isLoading || isFetching}>
-            <HeroIcon icon="CheckCircleIcon" className="h-5 w-5 mr-2"/>
+            <CheckCircleIcon className="h-5 w-5 mr-2"/>
             Ruaj Konfigurimet
           </Button>
         </div>
@@ -197,16 +197,19 @@ const AdminSettingsPage = () => {
 }; // Correctly closed component
 
 // Define SettingSection here if it's not imported
-const SettingSection = ({ title, icon, children }) => (
-    <section className="border border-gray-200 dark:border-gray-700 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
-        <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-5 border-b border-gray-200 dark:border-gray-700 pb-3 flex items-center">
-            <HeroIcon icon={icon} className="h-5 w-5 mr-2.5 text-primary-500" />
-            {title}
-        </h2>
-        <div className="space-y-4">
-            {children}
-        </div>
-    </section>
-  );
+const SettingSection = ({ title, description, icon: IconComponent, children }) => (
+  <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 sm:p-6">
+    <div className="flex items-start mb-3">
+      {IconComponent && <IconComponent className="h-7 w-7 text-primary-500 dark:text-primary-400 mr-3 flex-shrink-0" />}
+      <div>
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-white">{title}</h2>
+        {description && <p className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 mt-0.5">{description}</p>}
+      </div>
+    </div>
+    <div className="space-y-4">
+      {children}
+    </div>
+  </div>
+);
 
 export default AdminSettingsPage;

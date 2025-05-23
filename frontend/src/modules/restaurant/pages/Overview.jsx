@@ -1,210 +1,181 @@
 // src/modules/restaurant/pages/Overview.jsx
-import React, { useState, useEffect, useCallback } from 'react';
-import { Link, useOutletContext } from 'react-router-dom'; // Added useOutletContext
-import HeroIcon from '../../../components/HeroIcon';
-import Button from '../../../components/Button';
-import { useAuth } from '../../../context/AuthContext';
-import { restaurantApi } from '../../../api/restaurantApi';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'; // Added Recharts
+import React, { useState, useEffect, useCallback } from "react";
+import { Link, useOutletContext } from "react-router-dom";
+// import HeroIcon from "../../../components/HeroIcon"; // FSHIJE KËTË
+import { 
+    ClockIcon, ExclamationCircleIcon, QueueListIcon, StarIcon, CurrencyDollarIcon as CurrencyEuroIcon, 
+    ShoppingCartIcon, Cog6ToothIcon, ChartPieIcon, ArrowPathIcon, BuildingStorefrontIcon, UsersIcon, ExclamationTriangleIcon
+} from '@heroicons/react/24/outline';
+import Button from "../../../components/Button";
+import { useAuth } from "../../../context/AuthContext";
+import { restaurantApi } from "../../../api/restaurantApi";
+import { useNotification } from "../../../context/NotificationContext";
 
-// Mock Data for Charts
-const mockMonthlySalesData = [
-  { name: 'Jan', Shitjet: 4000 }, { name: 'Shk', Shitjet: 3000 },
-  { name: 'Mar', Shitjet: 5000 }, { name: 'Pri', Shitjet: 4500 },
-  { name: 'Maj', Shitjet: 6000 }, { name: 'Qer', Shitjet: 5500 },
-];
-const mockPopularItemsData = [
-  { name: 'Pizza Margherita', value: 120 }, { name: 'Burger Special', value: 95 },
-  { name: 'Pasta Carbonara', value: 80 }, { name: 'Coca-Cola', value: 250 },
-];
-const PIE_COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
-
+// StatCard to accept IconComponent
+const StatCard = ({ title, value, icon: IconComponent, unit, linkTo, color = "primary", isLoading }) => (
+    <div className={`bg-white dark:bg-slate-800 shadow-lg rounded-xl p-4 sm:p-5 flex items-center justify-between transition-all hover:shadow-xl`}>
+        <div>
+            <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider">{title}</p>
+            {isLoading ? (
+                <ArrowPathIcon className="h-6 w-6 animate-spin text-gray-400 dark:text-slate-500 my-1" />
+            ) : (
+                <p className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white">
+                    {value} {unit && <span className="text-sm font-normal">{unit}</span>}
+                </p>
+            )}
+            {linkTo && !isLoading && (
+                <Link to={linkTo} className={`text-xs text-${color}-600 dark:text-${color}-400 hover:underline`}>
+                    Shiko më shumë
+                </Link>
+            )}
+        </div>
+        {IconComponent && (
+            <div className={`p-2.5 bg-${color}-100 dark:bg-${color}-500/20 rounded-full`}>
+                <IconComponent className={`h-6 w-6 text-${color}-600 dark:text-${color}-400`} />
+            </div>
+        )}
+    </div>
+);
 
 const OverviewPage = () => {
-  const { user, token } = useAuth(); // Token from useAuth
-  const { currentRestaurantId, currentRestaurantName } = useOutletContext(); // Get from layout
-
-  const [stats, setStats] = useState({
-    activeOrders: 0, pendingOrders: 0, totalMenuItems: 0,
-    averageRating: 0, dailyRevenue: 0,
-  });
+  const { currentRestaurant } = useAuth();
+  const [stats, setStats] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
-  const [isLoading, setIsLoading] = useState({ stats: true, orders: true });
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { showSuccess, showError } = useNotification();
+  const contextRestaurant = useOutletContext()?.restaurant; // From RestaurantOwnerLayout
+  const restaurantToUse = currentRestaurant || contextRestaurant;
 
-  const fetchOverviewData = useCallback(async () => {
-    if (!currentRestaurantId || !token) return;
-    setIsLoading({ stats: true, orders: true });
+
+  const fetchData = useCallback(async () => {
+    if (!restaurantToUse?.id) {
+        setError("Restoranti nuk është zgjedhur ose nuk ka ID.");
+        setIsLoading(false);
+        return;
+    }
+    setIsLoading(true);
     setError(null);
     try {
-      // Simulate parallel fetching
-      const [ordersData, menuItemsData, detailsData] = await Promise.all([
-        restaurantApi.fetchRestaurantOrders(currentRestaurantId, token), // Fetch all orders to filter
-        restaurantApi.fetchMenuItems(currentRestaurantId, token),
-        restaurantApi.fetchRestaurantDetails(currentRestaurantId, token) // For rating
+      const [statsData, ordersData] = await Promise.all([
+        restaurantApi.getRestaurantDashboardStats(restaurantToUse.id),
+        restaurantApi.getRecentOrders(restaurantToUse.id, { limit: 5 }) 
       ]);
-
-      const activeStatuses = ['PREPARING', 'CONFIRMED', 'READY_FOR_PICKUP'];
-      const pendingStatuses = ['PENDING'];
-      
-      const activeOrdersCount = ordersData.filter(o => activeStatuses.includes(o.status?.toUpperCase())).length;
-      const pendingOrdersCount = ordersData.filter(o => pendingStatuses.includes(o.status?.toUpperCase())).length;
-      
-      // For daily revenue, filter orders from "today" (more complex logic needed for real app)
-      // Mocking daily revenue from all non-cancelled orders for simplicity
-      const dailyRevenueCalc = ordersData
-        .filter(o => !o.status?.startsWith('CANCELLED'))
-        .reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0);
-
-      setStats({
-        activeOrders: activeOrdersCount,
-        pendingOrders: pendingOrdersCount,
-        totalMenuItems: menuItemsData.length,
-        averageRating: detailsData?.average_rating || 0, // Assuming detailsData has average_rating
-        dailyRevenue: dailyRevenueCalc,
-      });
-      
-      // Sort orders by date and take the most recent ones
-      setRecentOrders(
-        ordersData
-          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-          .slice(0, 5)
-      );
-      setIsLoading(prev => ({ ...prev, stats: false, orders: false }));
-
+      setStats(statsData);
+      setRecentOrders(ordersData.results || ordersData || []);
     } catch (err) {
-      console.error("Overview: Failed to fetch overview data:", err);
-      setError(err.message || "S'u mund të ngarkoheshin të dhënat e pasqyrës.");
-      setIsLoading({ stats: false, orders: false });
+      console.error("Failed to load restaurant overview data:", err);
+      setError(err.message || "Problem në ngarkimin e të dhënave të pasqyrës.");
+      showError(err.message || "Problem në ngarkimin e të dhënave.");
+    } finally {
+      setIsLoading(false);
     }
-  }, [currentRestaurantId, token]);
+  }, [restaurantToUse?.id, showError]);
 
   useEffect(() => {
-    fetchOverviewData();
-  }, [fetchOverviewData]);
+    fetchData();
+  }, [fetchData]);
 
-  const StatCard = ({ title, value, icon, unit, linkTo, color = "primary", isLoadingCard }) => (
-    <Link to={linkTo || '#'} className={`block bg-white dark:bg-gray-800 shadow-lg rounded-xl p-5 hover:shadow-xl transition-all duration-300 border-l-4 border-${color}-500 dark:border-${color}-400 relative overflow-hidden`}>
-      {isLoadingCard && (
-          <div className="absolute inset-0 bg-white/70 dark:bg-gray-800/70 flex items-center justify-center z-10">
-              <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-gray-500"></div>
-          </div>
-      )}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">{title}</p>
-          <p className="text-2xl font-semibold text-gray-800 dark:text-white mt-1">
-            {value} {unit && <span className="text-xs">{unit}</span>}
-          </p>
-        </div>
-        <div className={`p-2.5 bg-${color}-100 dark:bg-${color}-500/20 rounded-full`}>
-            <HeroIcon icon={icon} className={`h-6 w-6 text-${color}-600 dark:text-${color}-400`} />
-        </div>
+  const handleToggleRestaurantStatus = async () => {
+    if (!restaurantToUse?.id) return;
+    const newStatus = !restaurantToUse.is_active;
+    try {
+        // This should be ideally handled in AuthContext or a dedicated restaurant context
+        // For now, making a direct API call and then trying to refresh auth context or data
+        await restaurantApi.updateRestaurantDetails(restaurantToUse.id, { is_active: newStatus });
+        showSuccess(`Statusi i restorantit u ndryshua në ${newStatus ? 'Aktiv' : 'Joaktiv'}.`);
+        // TODO: Refresh currentRestaurant in AuthContext or refetch data
+        fetchData(); // Refetch data to reflect change
+    } catch (err) {
+        showError("Problem në ndryshimin e statusit të restorantit.");
+        console.error("Failed to toggle restaurant status:", err);
+    }
+  };
+  
+  if (!restaurantToUse) {
+    return (
+      <div className="p-6 bg-yellow-50 dark:bg-yellow-900/30 rounded-md text-yellow-700 dark:text-yellow-200 flex items-center">
+        <ExclamationTriangleIcon className="h-6 w-6 mr-3 flex-shrink-0" />
+        <p>Ju lutem zgjidhni ose krijoni një restorant për të parë këtë faqe.</p>
       </div>
-    </Link>
-  );
-
-  if (error) {
-    return <div className="text-center text-red-500 dark:text-red-400 p-5">{error}</div>;
+    );
   }
 
+  if (error && !isLoading) { // Show error only if not loading initial data
+    return (
+        <div className="p-4 bg-red-50 dark:bg-red-900/30 rounded-md text-red-700 dark:text-red-200 flex items-center">
+            <ExclamationTriangleIcon className="h-6 w-6 mr-2 flex-shrink-0" />
+            <p>{error}</p>
+            <Button onClick={fetchData} variant="outline" size="sm" className="ml-auto">Provo Përsëri</Button>
+        </div>
+    );
+  }
+
+
   return (
-    <div className="container mx-auto">
-      <div className="flex justify-between items-center mb-6">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
         <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white">
-          Pasqyra: <span className="text-primary-600 dark:text-primary-400">{currentRestaurantName || "Restoranti"}</span>
+            Pasqyra e Restorantit: {restaurantToUse.name}
         </h1>
-         <Button variant="outline" onClick={fetchOverviewData} isLoading={isLoading.stats || isLoading.orders} disabled={isLoading.stats || isLoading.orders}
-                iconLeft={<HeroIcon icon="ArrowPathIcon" className={`h-4 w-4 ${ (isLoading.stats || isLoading.orders) ? 'animate-spin': ''}`}/>}>
-          Rifresko
+        <Button 
+            onClick={handleToggleRestaurantStatus} 
+            variant={restaurantToUse.is_active ? "danger" : "success"}
+            iconLeft={restaurantToUse.is_active ? ExclamationCircleIcon : CheckCircleIcon}
+            isLoading={isLoading} // This might need a dedicated loading state for this action
+        >
+            {restaurantToUse.is_active ? 'Çaktivizo Restorantin' : 'Aktivizo Restorantin'}
         </Button>
       </div>
+      {!restaurantToUse.is_approved && (
+        <div className="p-4 bg-yellow-50 dark:bg-yellow-800/40 rounded-lg text-yellow-700 dark:text-yellow-200 flex items-center space-x-3">
+            <ExclamationTriangleIcon className="h-6 w-6 flex-shrink-0"/>
+            <p className="text-sm">Ky restorant është në pritje të aprovimit nga administratori. Disa funksionalitete mund të jenë të limituara.</p>
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 mb-8">
-        <StatCard title="Porosi Aktive" value={stats.activeOrders} icon="ClockIcon" linkTo="../orders" color="blue" isLoadingCard={isLoading.stats} />
-        <StatCard title="Porosi në Pritje" value={stats.pendingOrders} icon="ExclamationCircleIcon" linkTo="../orders" color="yellow" isLoadingCard={isLoading.stats}/>
-        <StatCard title="Artikuj në Menu" value={stats.totalMenuItems} icon="QueueListIcon" linkTo="../menu" color="purple" isLoadingCard={isLoading.stats} />
-        <StatCard title="Vlerësimi Mesatar" value={stats.averageRating.toFixed(1)} unit="★" icon="StarIcon" linkTo="../reviews" color="amber" isLoadingCard={isLoading.stats}/>
-        <StatCard title="Të Ardhura Sot" value={stats.dailyRevenue.toFixed(2)} unit="€" icon="CurrencyEuroIcon" linkTo="../analytics" color="green" isLoadingCard={isLoading.stats}/>
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+        <StatCard title="Porosi Sot" value={stats?.orders_today ?? 'N/A'} icon={ShoppingCartIcon} linkTo="../orders" color="blue" isLoading={isLoading} />
+        <StatCard title="Të Ardhura Sot" value={stats?.revenue_today?.toFixed(2) ?? 'N/A'} unit="€" icon={CurrencyEuroIcon} color="green" isLoading={isLoading} />
+        <StatCard title="Vlerësimi Mesatar" value={stats?.average_rating?.toFixed(1) ?? 'N/A'} unit="★" icon={StarIcon} linkTo="../reviews" color="yellow" isLoading={isLoading} />
+        <StatCard title="Artikuj në Menu" value={stats?.menu_item_count ?? 'N/A'} icon={QueueListIcon} linkTo="../menu" color="purple" isLoading={isLoading} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white dark:bg-gray-800 shadow-xl rounded-xl p-6">
-          <h2 className="text-xl font-semibold text-gray-700 dark:text-white mb-4 border-b border-gray-200 dark:border-gray-700 pb-3">Porositë e Fundit</h2>
-          {isLoading.orders ? (
-            <div className="flex justify-center items-center h-40"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-gray-500"></div></div>
-          ) : recentOrders.length > 0 ? (
-            <ul className="divide-y divide-gray-200 dark:divide-gray-700 max-h-80 overflow-y-auto custom-scrollbar-thin pr-1">
-              {recentOrders.map(order => (
-                <li key={order.id} className="py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 px-1 rounded">
-                  <div className="flex items-center justify-between text-sm">
-                    <div>
-                      <Link to={`../orders`} onClick={() => {/* TODO: Potentially filter orders page or open specific order */}} className="font-medium text-primary-600 dark:text-primary-400 hover:underline">Porosia #{order.id}</Link>
-                      <p className="text-gray-600 dark:text-gray-300">Klienti: {order.user_details?.username || 'N/A'}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-gray-800 dark:text-white">{parseFloat(order.total_amount).toFixed(2)} €</p>
-                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium
-                        ${order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-700/30 dark:text-yellow-300' : 
-                          ['PREPARING', 'CONFIRMED', 'READY_FOR_PICKUP'].includes(order.status) ? 'bg-blue-100 text-blue-700 dark:bg-blue-700/30 dark:text-blue-300' : 
-                          'bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-200'}`}>
-                        {order.status?.replace('_',' ').toLowerCase() || 'E panjohur'}
-                      </span>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-gray-500 dark:text-gray-400 py-5 text-center">Nuk ka porosi të fundit.</p>
-          )}
+      {/* Recent Orders & Quick Actions */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5">
+          <h2 className="text-lg font-semibold text-gray-700 dark:text-slate-200 mb-3">Porositë e Fundit</h2>
+          {isLoading && <ArrowPathIcon className="h-6 w-6 animate-spin text-gray-400 dark:text-slate-500" />}
+          {!isLoading && recentOrders.length === 0 && <p className="text-sm text-gray-500 dark:text-slate-400">Nuk ka porosi të fundit.</p>}
+          <ul className="divide-y divide-gray-200 dark:divide-slate-700 max-h-80 overflow-y-auto">
+            {recentOrders.map(order => (
+              <li key={order.id} className="py-3 flex justify-between items-center">
+                <div>
+                  <p className="text-sm font-medium text-gray-800 dark:text-slate-100">Porosia #{order.id} <span className="text-xs text-gray-500 dark:text-slate-400">- {order.customer_name || 'Klient'}</span></p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400">{new Date(order.created_at).toLocaleString('sq-AL')}</p>
+                </div>
+                <div className="text-right">
+                    <p className="text-sm font-semibold text-primary-600 dark:text-primary-400">{parseFloat(order.total_price).toFixed(2)} €</p>
+                    <span className={`px-1.5 py-0.5 text-xs rounded-full ${
+                        order.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-700 dark:text-yellow-200' :
+                        order.status === 'CONFIRMED' ? 'bg-blue-100 text-blue-700 dark:bg-blue-700 dark:text-blue-200' :
+                        order.status === 'PREPARING' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-700 dark:text-indigo-200' :
+                        order.status === 'OUT_FOR_DELIVERY' ? 'bg-purple-100 text-purple-700 dark:bg-purple-700 dark:text-purple-200' :
+                        order.status === 'DELIVERED' ? 'bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-200' :
+                        'bg-red-100 text-red-700 dark:bg-red-700 dark:text-red-200'
+                    }`}>{order.status_display || order.status}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
-
-        <div className="bg-white dark:bg-gray-800 shadow-xl rounded-xl p-6">
-          <h2 className="text-xl font-semibold text-gray-700 dark:text-white mb-5">Veprime të Shpejta</h2>
-          <div className="space-y-3">
-            <Button as={Link} to="../menu" fullWidth variant="primary" iconLeft={<HeroIcon icon="QueueListIcon" className="h-5 w-5"/>}> Menaxho Menunë </Button>
-            <Button as={Link} to="../orders" fullWidth variant="secondary" iconLeft={<HeroIcon icon="ShoppingCartIcon" className="h-5 w-5"/>}> Shiko Porositë </Button>
-            <Button as={Link} to="../settings" fullWidth variant="outline" iconLeft={<HeroIcon icon="Cog6ToothIcon" className="h-5 w-5"/>}> Konfigurimet </Button>
-          </div>
-        </div>
-      </div>
-      
-      <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white dark:bg-gray-800 shadow-xl rounded-xl p-6">
-            <h2 className="text-xl font-semibold text-gray-700 dark:text-white mb-4 border-b border-gray-200 dark:border-gray-700 pb-3">Shitjet Mujore (Mock)</h2>
-            <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={mockMonthlySalesData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={document.documentElement.classList.contains('dark') ? "#4B5563" : "#E5E7EB"}/>
-                    <XAxis dataKey="name" tick={{ fill: document.documentElement.classList.contains('dark') ? '#9CA3AF' : '#6B7280', fontSize: 12 }} />
-                    <YAxis tickFormatter={(value) => `${value}€`} tick={{ fill: document.documentElement.classList.contains('dark') ? '#9CA3AF' : '#6B7280', fontSize: 12 }}/>
-                    <Tooltip
-                        contentStyle={{ backgroundColor: document.documentElement.classList.contains('dark') ? '#374151' : '#FFFFFF', border: '1px solid #D1D5DB', borderRadius: '0.5rem' }}
-                        labelStyle={{ color: document.documentElement.classList.contains('dark') ? '#F3F4F6' : '#1F2937', fontWeight: 'bold' }}
-                        itemStyle={{ color: document.documentElement.classList.contains('dark') ? '#D1D5DB' : '#374151' }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: "12px" }} />
-                    <Bar dataKey="Shitjet" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                </BarChart>
-            </ResponsiveContainer>
-        </div>
-         <div className="bg-white dark:bg-gray-800 shadow-xl rounded-xl p-6">
-            <h2 className="text-xl font-semibold text-gray-700 dark:text-white mb-4 border-b border-gray-200 dark:border-gray-700 pb-3">Artikujt Popullorë (Mock)</h2>
-            <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                    <Pie data={mockPopularItemsData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} labelLine={false}
-                         label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                         legendType="circle"
-                         
-                    >
-                        {mockPopularItemsData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                        ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: document.documentElement.classList.contains('dark') ? '#374151' : '#FFFFFF', borderRadius: '0.5rem' }}/>
-                    <Legend wrapperStyle={{ fontSize: "12px" }}/>
-                </PieChart>
-            </ResponsiveContainer>
+        <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 space-y-3">
+          <h2 className="text-lg font-semibold text-gray-700 dark:text-slate-200 mb-2">Veprime të Shpejta</h2>
+          <Button as={Link} to="../menu" fullWidth variant="outline" iconLeft={QueueListIcon}>Menaxho Menunë</Button>
+          <Button as={Link} to="../orders" fullWidth variant="outline" iconLeft={ShoppingCartIcon}>Shiko Porositë</Button>
+          <Button as={Link} to="../settings" fullWidth variant="outline" iconLeft={Cog6ToothIcon}>Konfigurimet e Restorantit</Button>
+          <Button as={Link} to="../analytics" fullWidth variant="outline" iconLeft={ChartPieIcon}>Analitika</Button>
         </div>
       </div>
     </div>

@@ -278,6 +278,24 @@ class Review(models.Model):
         return f"Review by {self.user.get_full_name() or self.user.email} for {self.restaurant.name} - {self.rating} stars"
 
 
+class ReviewReply(models.Model):
+    review = models.ForeignKey(Review, on_delete=models.CASCADE, related_name='replies')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, help_text="Përdoruesi që ka bërë përgjigjen (zakonisht pronari i restorantit ose admini)")
+    text = models.TextField(help_text="Përmbajtja e përgjigjes")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+        verbose_name = "Përgjigje Vlerësimi"
+        verbose_name_plural = "Përgjigjet e Vlerësimeve"
+        # Mund të shtosh unique_together = ('review', 'user') nëse një user mund të bëjë vetëm një reply për review
+        # unique_together = ('review',) # Nëse vetëm një reply lejohet për review, pavarësisht userit
+
+    def __str__(self):
+        return f"Reply by {self.user.email} to review for '{self.review.restaurant.name}'"
+
+
 class Order(models.Model):
     class OrderStatus(models.TextChoices):
         PENDING = 'PENDING', 'Në Pritje' # Porosia sapo është bërë nga klienti
@@ -397,3 +415,18 @@ class DriverProfile(models.Model):
 
     def __str__(self):
         return f"Profil për shoferin: {self.user.email}"
+
+class PageViewLog(models.Model):
+    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name='page_views')
+    viewed_at = models.DateTimeField(auto_now_add=True)
+    # mund të shtosh user (nëse është i kyçur) ose IP address për më shumë detaje
+    # user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    # ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-viewed_at']
+        verbose_name = "Restaurant Page View Log"
+        verbose_name_plural = "Restaurant Page View Logs"
+
+    def __str__(self):
+        return f"View for {self.restaurant.name} at {self.viewed_at.strftime('%Y-%m-%d %H:%M')}"

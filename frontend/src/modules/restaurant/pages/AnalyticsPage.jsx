@@ -1,169 +1,202 @@
 // src/modules/restaurant/pages/AnalyticsPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
-import { useOutletContext } from 'react-router-dom';
-import HeroIcon from '../../../components/HeroIcon.jsx';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { restaurantApi } from '../../../api/restaurantApi.js';
-import { useAuth } from '../../../context/AuthContext.jsx';
-import { useNotification } from '../../../context/NotificationContext.jsx';
-import Button from '../../../components/Button.jsx'; // Shtuar butonin
-
-const PIE_CHART_COLORS = ['#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899']; // sky, emerald, amber, red, violet, pink
-
-const StatCard = ({ title, value, icon, unit, trend, color = "primary", isLoading }) => ( /* ... si më parë ... */ 
-  <div className={`bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 border-l-4 border-${color}-500 dark:border-${color}-400 relative overflow-hidden`}>
-    {isLoading && (
-        <div className="absolute inset-0 bg-white/70 dark:bg-slate-800/70 flex items-center justify-center z-10">
-            <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-gray-500"></div>
-        </div>
-    )}
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm text-gray-500 dark:text-slate-400 font-medium truncate" title={title}>{title}</p>
-        <p className="text-2xl font-bold text-gray-800 dark:text-white mt-1">
-          {value} {unit && <span className="text-xs font-normal">{unit}</span>}
-        </p>
-      </div>
-      <div className={`p-2.5 bg-${color}-100 dark:bg-${color}-500/20 rounded-full flex-shrink-0`}>
-          <HeroIcon icon={icon} className={`h-6 w-6 text-${color}-600 dark:text-${color}-400`} />
-      </div>
-    </div>
-    {trend && <p className={`text-xs mt-1 ${trend.startsWith('+') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{trend}</p>}
-  </div>
-);
+import React, { useState, useEffect, useCallback } from "react";
+import { useOutletContext } from "react-router-dom";
+// import HeroIcon from "../../../components/HeroIcon.jsx"; // FSHIJE KËTË
+import { ArrowPathIcon, ChartPieIcon, ExclamationTriangleIcon, CalendarDaysIcon, CurrencyDollarIcon, ShoppingCartIcon, StarIcon } from '@heroicons/react/24/outline';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { restaurantApi } from "../../../api/restaurantApi.js";
+import { useNotification } from "../../../context/NotificationContext.jsx";
+import Button from "../../../components/Button.jsx"; // Assuming path
 
 const AnalyticsPage = () => {
-  const { token } = useAuth();
-  const { currentRestaurantId, currentRestaurantName } = useOutletContext();
-  const { showError } = useNotification();
-
-  const initialAnalyticsData = {
-    totalRevenueMonth: 0, totalOrdersMonth: 0, avgOrderValue: 0, newCustomersMonth: 0,
-    salesMonthly: [], salesDaily: [], popularItems: [],
-  };
-  const [analyticsData, setAnalyticsData] = useState(initialAnalyticsData);
+  const { currentRestaurant } = useOutletContext() || {};
+  const [analyticsData, setAnalyticsData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { showError } = useNotification();
+  const [dateRange, setDateRange] = useState({ 
+    from: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0], // Default to last 30 days
+    to: new Date().toISOString().split('T')[0] 
+  });
 
   const fetchAnalytics = useCallback(async () => {
-    if (!currentRestaurantId || !token) {
-        setError("Restoranti nuk është zgjedhur ose nuk jeni të kyçur.");
-        setIsLoading(false);
-        setAnalyticsData(initialAnalyticsData);
-        return;
+    if (!currentRestaurant?.id) {
+      setError("Restoranti nuk është zgjedhur ose nuk ka ID.");
+      setIsLoading(false);
+      return;
     }
     setIsLoading(true);
     setError(null);
     try {
-      const data = await restaurantApi.fetchRestaurantAnalytics(currentRestaurantId);
-      // Supozojmë se API kthen një objekt me strukturën e pritur
-      setAnalyticsData({
-        totalRevenueMonth: data.totalRevenueMonth || 0,
-        totalOrdersMonth: data.totalOrdersMonth || 0,
-        avgOrderValue: data.avgOrderValue || 0,
-        newCustomersMonth: data.newCustomersMonth || 0,
-        salesMonthly: data.salesMonthly || [],
-        salesDaily: data.salesDaily || [],
-        popularItems: (data.popularItems || []).sort((a,b) => b.orders - a.orders).slice(0,5),
-      });
+      const params = {
+        start_date: dateRange.from,
+        end_date: dateRange.to,
+      };
+      const data = await restaurantApi.getRestaurantAnalytics(currentRestaurant.id, params);
+      setAnalyticsData(data);
     } catch (err) {
-      setError(err.message || "S'u mund të ngarkoheshin të dhënat analitike.");
-      showError(err.message || "S'u mund të ngarkoheshin të dhënat analitike.");
-      setAnalyticsData(initialAnalyticsData); // Kthehu te mock/initial në rast gabimi
+      console.error("Failed to load analytics:", err);
+      setError(err.message || "Problem në ngarkimin e analitikave.");
+      showError(err.message || "Problem në ngarkimin e analitikave.");
     } finally {
       setIsLoading(false);
     }
-  }, [currentRestaurantId, token, showError]);
+  }, [currentRestaurant?.id, dateRange, showError]);
 
   useEffect(() => {
-    if (currentRestaurantId) {
-        fetchAnalytics();
-    } else {
-        setIsLoading(false);
-        setError("Zgjidhni një restorant për të parë analitikat.");
-    }
-  }, [fetchAnalytics, currentRestaurantId]);
+    fetchAnalytics();
+  }, [fetchAnalytics]);
 
-  const isDark = typeof window !== 'undefined' && document.documentElement.classList.contains('dark');
-  const chartTextColor = isDark ? '#9CA3AF' : '#6B7280';
-  const chartGridColor = isDark ? 'rgba(55, 65, 81, 0.5)' : 'rgba(229, 231, 235, 0.7)'; // gray-700/50 : gray-200/70
-  const tooltipBg = isDark ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.95)'; // slate-800 : white
-  const tooltipBorder = isDark ? '#475569' : '#E2E8F0'; // slate-600 : slate-300
-
-  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }) => {
-    const RADIAN = Math.PI / 180;
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.55;
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
-    if (percent * 100 < 5) return null; // Mos shfaq label për pjesë shumë të vogla
-
-    return (
-      <text x={x} y={y} fill={isDark? "#F1F5F9" : "#334155"} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize="10px" fontWeight="medium">
-        {`${name} (${(percent * 100).toFixed(0)}%)`}
-      </text>
-    );
+  const handleDateChange = (e) => {
+    setDateRange(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
+  
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#A230ED', '#D930ED'];
 
-  if (isLoading && analyticsData.totalOrdersMonth === 0) { /* ...si më parë... */ }
-  if (error && !isLoading) { /* ...si më parë... */ }
-   if (!currentRestaurantId && !isLoading) {
-      return <div className="text-center py-10 text-lg text-gray-500 dark:text-slate-400">Ju lutem zgjidhni një restorant nga paneli juaj për të parë analitikat.</div>
+  if (!currentRestaurant) {
+    return (
+      <div className="p-6 bg-yellow-50 dark:bg-yellow-900/30 rounded-md text-yellow-700 dark:text-yellow-200 flex items-center">
+        <ExclamationTriangleIcon className="h-6 w-6 mr-3 flex-shrink-0" />
+        <p>Ju lutem zgjidhni ose krijoni një restorant për të parë këtë faqe.</p>
+      </div>
+    );
   }
 
+  if (error && !isLoading) {
+    return (
+        <div className="p-4 bg-red-50 dark:bg-red-900/30 rounded-md text-red-700 dark:text-red-200 flex items-center">
+            <ExclamationTriangleIcon className="h-6 w-6 mr-2 flex-shrink-0" />
+            <p>{error}</p>
+            <Button onClick={fetchAnalytics} variant="outline" size="sm" className="ml-auto">Provo Përsëri</Button>
+        </div>
+    );
+  }
+  
+  const StatCard = ({ title, value, icon: IconComponent, unit, color = "primary" }) => (
+    <div className={`bg-white dark:bg-slate-800 shadow-lg rounded-xl p-4 flex items-center justify-between`}>
+        <div>
+            <p className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">{title}</p>
+            <p className="text-xl font-bold text-gray-800 dark:text-white">
+                {value ?? <ArrowPathIcon className="h-5 w-5 animate-spin text-gray-400" />} {unit}
+            </p>
+        </div>
+        {IconComponent && (
+            <div className={`p-2 bg-${color}-100 dark:bg-${color}-500/20 rounded-full`}>
+                <IconComponent className={`h-5 w-5 text-${color}-600 dark:text-${color}-400`} />
+            </div>
+        )}
+    </div>
+  );
+
+
   return (
-    <div className="container mx-auto">
-       <div className="flex flex-col sm:flex-row justify-between items-center mb-6 md:mb-8">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white">Analitika: {currentRestaurantName || "Restoranti"}</h1>
-         <Button variant="outline" onClick={fetchAnalytics} isLoading={isLoading} disabled={isLoading}
-                iconLeft={<HeroIcon icon="ArrowPathIcon" className={`h-4 w-4 ${isLoading ? 'animate-spin': ''}`}/>}>
-          Rifresko
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white flex items-center">
+            <ChartPieIcon className="h-7 w-7 mr-2 text-primary-600 dark:text-primary-400" />
+            Analitikat e Restorantit
+        </h1>
+        <Button onClick={fetchAnalytics} variant="outline" iconLeft={ArrowPathIcon} isLoading={isLoading} disabled={isLoading}>
+            Rifresko Analitikat
         </Button>
       </div>
-      {error && !isLoading && <div className="text-center text-red-500 dark:text-red-400 py-6 bg-red-50 dark:bg-red-900/30 p-4 rounded-md">{error}</div>}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-        <StatCard title="Të Ardhura (30 Ditët e Fundit)" value={analyticsData.totalRevenueMonth.toFixed(2)} unit="€" icon="CurrencyEuroIcon" color="green" isLoading={isLoading} trend="+5.2%"/>
-        <StatCard title="Porosi (30 Ditët e Fundit)" value={analyticsData.totalOrdersMonth} icon="ShoppingCartIcon" color="blue" isLoading={isLoading} trend="-1.5%"/>
-        <StatCard title="Vlera Mes. e Porosisë" value={analyticsData.avgOrderValue.toFixed(2)} unit="€" icon="ScaleIcon" color="purple" isLoading={isLoading} trend="+0.8%"/>
-        <StatCard title="Klientë të Rinj (30 Ditët e Fundit)" value={analyticsData.newCustomersMonth} icon="UserPlusIcon" color="teal" isLoading={isLoading} trend="+12%"/>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 md:gap-8 mb-8">
-        <div className="lg:col-span-3 bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-700 dark:text-white mb-4 border-b border-gray-200 dark:border-slate-700 pb-3">Shitjet Ditore (7 Ditët e Fundit)</h2>
-          {isLoading ? <div className="h-72 flex justify-center items-center"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-gray-400 dark:border-slate-500"></div></div> :
-          analyticsData.salesDaily.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={analyticsData.salesDaily} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
-              <XAxis dataKey="name" tick={{ fill: chartTextColor, fontSize: 10 }} />
-              <YAxis tickFormatter={(value) => `${value}€`} tick={{ fill: chartTextColor, fontSize: 10 }} />
-              <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '0.375rem' }} labelStyle={{ color: isDark ? '#FFF' : '#000', fontWeight:'bold' }} itemStyle={{fontSize: '12px'}} />
-              <Legend wrapperStyle={{ fontSize: "12px" }} />
-              <Line type="monotone" dataKey="total" name="Shitjet" stroke="#8884d8" strokeWidth={2} activeDot={{ r: 6 }} dot={{r:3}} />
-              <Line type="monotone" dataKey="orders" name="Porositë" stroke="#82ca9d" strokeWidth={2} activeDot={{ r: 6 }} dot={{r:3}} />
-            </LineChart>
-          </ResponsiveContainer>
-          ) : (<p className="h-72 flex justify-center items-center text-sm text-gray-500 dark:text-slate-400">Nuk ka të dhëna për shitjet ditore.</p>)}
-        </div>
-
-        <div className="lg:col-span-2 bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6">
-          <h2 className="text-lg sm:text-xl font-semibold text-gray-700 dark:text-white mb-4 border-b border-gray-200 dark:border-slate-700 pb-3">Artikujt Popullorë</h2>
-          {isLoading ? <div className="h-72 flex justify-center items-center"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-gray-400 dark:border-slate-500"></div></div> :
-          analyticsData.popularItems.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie data={analyticsData.popularItems} dataKey="orders" nameKey="name" cx="50%" cy="50%" 
-                   innerRadius={50} outerRadius={80} paddingAngle={3} labelLine={false} label={renderCustomizedLabel}>
-                {analyticsData.popularItems.map((entry, index) => ( <Cell key={`cell-${index}`} fill={PIE_CHART_COLORS[index % PIE_CHART_COLORS.length]} /> ))}
-              </Pie>
-              <Tooltip contentStyle={{ backgroundColor: tooltipBg, border: `1px solid ${tooltipBorder}`, borderRadius: '0.375rem' }}/>
-              <Legend iconSize={10} layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: "11px", lineHeight: "1.2" }}/>
-            </PieChart>
-          </ResponsiveContainer>
-          ) : (<p className="h-72 flex justify-center items-center text-sm text-gray-500 dark:text-slate-400">Nuk ka të dhëna për artikujt popullorë.</p>)}
+      
+      {/* Date Range Picker */}
+      <div className="p-4 bg-white dark:bg-slate-800 rounded-lg shadow-md">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+            <div>
+                <label htmlFor="dateFrom" className="label-form text-xs">Nga Data:</label>
+                <input type="date" name="from" id="dateFrom" value={dateRange.from} onChange={handleDateChange} className="input-form w-full"/>
+            </div>
+            <div>
+                <label htmlFor="dateTo" className="label-form text-xs">Deri më Datë:</label>
+                <input type="date" name="to" id="dateTo" value={dateRange.to} onChange={handleDateChange} className="input-form w-full"/>
+            </div>
+            <Button onClick={fetchAnalytics} iconLeft={CalendarDaysIcon} isLoading={isLoading} disabled={isLoading} className="sm:mt-5">
+                Apliko Filtrimin
+            </Button>
         </div>
       </div>
+
+      {isLoading && !analyticsData && (
+         <div className="flex justify-center items-center py-20">
+            <ArrowPathIcon className="h-12 w-12 animate-spin text-primary-500" />
+         </div>
+      )}
+
+      {analyticsData && !isLoading && (
+        <>
+          {/* Key Metrics Summary */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard title="Të Ardhurat Totale" value={analyticsData.summary?.total_revenue?.toFixed(2)} unit="€" icon={CurrencyDollarIcon} color="green"/>
+            <StatCard title="Porosi Gjithsej" value={analyticsData.summary?.total_orders} icon={ShoppingCartIcon} color="blue"/>
+            <StatCard title="Vlerësimi Mesatar" value={analyticsData.summary?.average_rating?.toFixed(1)} unit="★" icon={StarIcon} color="yellow"/>
+            <StatCard title="Klientë të Rinj" value={analyticsData.summary?.new_customers} icon={UserPlusIcon} color="purple"/>
+          </div>
+          
+          {/* Revenue Over Time Chart */}
+          {analyticsData.revenue_over_time && analyticsData.revenue_over_time.length > 0 && (
+            <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5">
+              <h2 className="text-lg font-semibold text-gray-700 dark:text-slate-200 mb-3">Të Ardhurat Gjatë Kohës</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={analyticsData.revenue_over_time}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-slate-700"/>
+                  <XAxis dataKey="date" tick={{fontSize: 12}} className="fill-gray-500 dark:fill-slate-400"/>
+                  <YAxis tick={{fontSize: 12}} className="fill-gray-500 dark:fill-slate-400" unit="€"/>
+                  <Tooltip formatter={(value) => `${value.toFixed(2)} €`} wrapperClassName="tooltip-recharts"/>
+                  <Legend />
+                  <Line type="monotone" dataKey="revenue" name="Të ardhurat" stroke="#8884d8" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Popular Menu Items Chart */}
+          {analyticsData.popular_menu_items && analyticsData.popular_menu_items.length > 0 && (
+            <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5">
+              <h2 className="text-lg font-semibold text-gray-700 dark:text-slate-200 mb-3">Artikujt Më Popullorë të Menusë</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={analyticsData.popular_menu_items} layout="vertical" margin={{left: 100}}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-slate-700"/>
+                    <XAxis type="number" tick={{fontSize: 12}} className="fill-gray-500 dark:fill-slate-400"/>
+                    <YAxis dataKey="name" type="category" tick={{fontSize: 10, width: 95, textAnchor: 'start'}} interval={0} className="fill-gray-500 dark:fill-slate-400"/>
+                    <Tooltip formatter={(value) => `${value} porosi`} wrapperClassName="tooltip-recharts"/>
+                    <Legend />
+                    <Bar dataKey="order_count" name="Numri i Porosive" fill="#82ca9d" barSize={20}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          
+          {/* Order Status Distribution */}
+          {analyticsData.order_status_distribution && analyticsData.order_status_distribution.length > 0 && (
+            <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5">
+                <h2 className="text-lg font-semibold text-gray-700 dark:text-slate-200 mb-3">Shpërndarja e Statusit të Porosive</h2>
+                <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                        <Pie
+                            data={analyticsData.order_status_distribution}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            outerRadius={100}
+                            fill="#8884d8"
+                            dataKey="count"
+                            nameKey="status_display"
+                        >
+                            {analyticsData.order_status_distribution.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                        </Pie>
+                        <Tooltip formatter={(value, name) => [`${value} porosi`, name]} wrapperClassName="tooltip-recharts"/>
+                        <Legend />
+                    </PieChart>
+                </ResponsiveContainer>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 };

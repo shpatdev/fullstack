@@ -1,71 +1,114 @@
 // src/modules/auth/pages/AdminLoginPage.jsx
-import React, { useState } from 'react'; // useContext removed
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../../context/AuthContext.jsx'; // Changed import
-// You might need a specific admin login function if it's different
-// import { adminApi } from '../../../api/adminApi.js'; // If login is specialized for admin
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../context/AuthContext.jsx';
+import Button from '../../../components/Button.jsx';
+import { ShieldCheckIcon, XCircleIcon } from '@heroicons/react/24/solid';
+import { useNotification } from '../../../context/NotificationContext.jsx'; // Added for showError
 
 const AdminLoginPage = () => { 
-    const { login } = useAuth(); // Changed usage
+    const { adminLogin, loadingAuth, error: authError, setError: setAuthError, isAuthenticated, user } = useAuth();
     const navigate = useNavigate();
-    const [email, setEmail] = useState('admin@example.com'); 
-    const [password, setPassword] = useState('password'); 
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
+    const { showError } = useNotification(); // Get showError from context
+
+    const [email, setEmail] = useState(''); 
+    const [password, setPassword] = useState(''); 
+
+    useEffect(() => {
+        // Redirect if already authenticated as admin
+        if (isAuthenticated && user?.role === 'ADMIN') {
+            navigate('/admin/dashboard', { replace: true });
+        }
+        // Cleanup auth error on component unmount
+        return () => {
+            if (setAuthError) setAuthError(null);
+        };
+    }, [isAuthenticated, user, navigate, setAuthError]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setError('');
-        setLoading(true);
+        if(setAuthError) setAuthError(null); 
+
+        if (!email || !password) {
+            showError("Ju lutem plotësoni email-in dhe fjalëkalimin.");
+            return;
+        }
+
         try {
-            // Using the global login from AuthContext. 
-            // Backend must return 'ADMIN' role for this user.
-            await login({ username: email, password }); 
-            navigate('/admin/dashboard'); // Or /admin/users if that's the default
+            const loggedInUser = await adminLogin({ email, password }); 
+            
+            if (loggedInUser && loggedInUser.role === 'ADMIN') {
+                 // AuthContext's fetchAndSetUser and subsequent isAuthenticated update 
+                 // should trigger the useEffect for navigation.
+                 // Explicit navigation can be a fallback or primary method.
+                 navigate('/admin/dashboard', { replace: true });
+            } else if (loggedInUser) {
+                // Logged in but not an admin
+                const message = 'Kyçja u krye, por ju nuk keni privilegje administratori.';
+                if(setAuthError) setAuthError(message);
+                showError(message);
+                // Consider logging out the user if they are not an admin
+                // await logout(); 
+            }
+            // If adminLogin fails, it should throw an error caught below,
+            // and AuthContext should set its own error state.
         } catch (err) {
-            setError(err.message || 'Admin login failed.');
-        } finally {
-            setLoading(false);
+            // Error should be set by adminLogin in AuthContext.
+            // Display it via showError if not already handled by a global authError display.
+            const displayMessage = authError || err.message || 'Gabim gjatë kyçjes së administratorit.';
+            showError(displayMessage); 
+            // Ensure authError in context is also set if not already
+            if (setAuthError && !authError) {
+                 setAuthError(displayMessage);
+            }
+            console.error("Admin Login page error:", err);
         }
     };
 
-    // ... JSX for AdminLoginPage from Gemini's Admin App.jsx output ...
-    // Make sure to replace any mockLocalStorage with AuthContext usage
-    // and onLoginSuccess with navigate()
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-lg">
-                <div>
-                    <div className="flex justify-center">
-                        {/* Replace with your actual logo component or SVG */}
-                        <svg className="w-16 h-16 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M5 6h14M5 10h14M5 14h14M5 18h14"></path>
-                        </svg>
-                    </div>
-                    <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-                        Admin Dashboard Login
-                    </h2>
-                </div>
-                <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-                    {/* Form inputs for email and password, error display, submit button from Gemini's code */}
-                    <div className="rounded-md shadow-sm -space-y-px">
-                        <div>
-                            <label htmlFor="email-address-admin" className="sr-only">Email address</label>
-                            <input id="email-address-admin" name="email" type="email" autoComplete="email" required className="appearance-none rounded-none relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" placeholder="admin@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-                        </div>
-                        <div>
-                            <label htmlFor="password-admin" className="sr-only">Password</label>
-                            <input id="password-admin" name="password" type="password" autoComplete="current-password" required className="appearance-none rounded-none relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" placeholder="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                        </div>
-                    </div>
-                    {error && (<div className="text-red-500 text-sm text-center py-2">{error}</div>)}
-                    <div>
-                        <button type="submit" disabled={loading} className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-400 disabled:cursor-not-allowed">
-                            {loading ? 'Signing in...' : 'Sign in'}
-                        </button>
-                    </div>
-                </form>
+        <div className="w-full"> {/* AuthLayout will provide the main card styling */}
+            <div className="flex justify-center mb-4">
+                <ShieldCheckIcon className="w-16 h-16 text-primary-600 dark:text-primary-400" />
             </div>
+            <h2 className="mb-6 text-center text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
+                Paneli i Administratorit
+            </h2>
+            <form onSubmit={handleSubmit} className="space-y-5">
+                {authError && (
+                    <div className="rounded-md bg-red-50 dark:bg-red-900/30 p-3">
+                        <div className="flex">
+                            <div className="flex-shrink-0">
+                                <XCircleIcon className="h-5 w-5 text-red-400 dark:text-red-300" aria-hidden="true" />
+                            </div>
+                            <div className="ml-3">
+                                <p className="text-sm font-medium text-red-700 dark:text-red-200">{authError}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                <div>
+                    <label htmlFor="email-address-admin" className="label-form">Email</label>
+                    <input id="email-address-admin" name="email" type="email" autoComplete="email" required 
+                           className="input-form w-full" placeholder="admin@shembull.com" 
+                           value={email} onChange={(e) => { setEmail(e.target.value); if (authError) setAuthError(null); }} />
+                </div>
+                <div>
+                    <label htmlFor="password-admin" className="label-form">Fjalëkalimi</label>
+                    <input id="password-admin" name="password" type="password" autoComplete="current-password" required 
+                           className="input-form w-full" placeholder="••••••••" 
+                           value={password} onChange={(e) => { setPassword(e.target.value); if (authError) setAuthError(null); }} />
+                </div>
+                <div>
+                    <Button type="submit" fullWidth variant="primary" isLoading={loadingAuth} disabled={loadingAuth} size="lg">
+                        {loadingAuth ? 'Duke u kyçur...' : 'Kyçu si Admin'}
+                    </Button>
+                </div>
+            </form>
+            <p className="mt-6 text-center text-sm">
+                <Link to="/auth/login" className="font-medium text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200">
+                    Nuk jeni admin? Kyçu si përdorues.
+                </Link>
+            </p>
         </div>
     );
 };

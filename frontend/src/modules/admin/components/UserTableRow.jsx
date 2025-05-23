@@ -1,72 +1,75 @@
 // src/modules/admin/components/UserTableRow.jsx
-import React from 'react';
-import HeroIcon from '../../../components/HeroIcon';
-import Button from '../../../components/Button';
+import React from "react";
+// import HeroIcon from "../../../components/HeroIcon"; // FSHIJE KËTË
+import { PencilIcon, TrashIcon, CheckCircleIcon, XCircleIcon, KeyIcon, ShieldCheckIcon, UserCircleIcon } from '@heroicons/react/24/outline';
+import Button from "../../../components/Button";
 
 const UserTableRow = ({ user, onEdit, onDelete, onToggleStatus, onResetPassword }) => {
-  const roleDisplayNames = {
-    ADMIN: 'Admin',
-    CUSTOMER: 'Klient',
-    RESTAURANT_OWNER: 'Pronar Restoranti',
-    DELIVERY_PERSONNEL: 'Furnizues',
+  const getRoleDisplay = (role) => {
+    switch (role) {
+      case 'ADMIN':
+        return 'Admin';
+      case 'CUSTOMER':
+        return 'Klient';
+      case 'RESTAURANT_OWNER':
+        return 'Pronar Restoranti';
+      case 'DELIVERY_PERSONNEL':
+        return 'Furnizues';
+      default:
+        return role;
+    }
   };
 
-  const statusDisplayInfo = {
-    ACTIVE: { text: 'Aktiv', colorClasses: 'bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100' },
-    SUSPENDED: { text: 'Pezulluar', colorClasses: 'bg-red-100 text-red-800 dark:bg-red-700 dark:text-red-100' },
-    PENDING_APPROVAL: { text: 'Në Pritje', colorClasses: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-700 dark:text-yellow-100' },
-    DEACTIVATED: { text: 'Çaktivizuar', colorClasses: 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-200'},
+  const getStatusPill = (isActive) => {
+    return isActive ? (
+      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100">
+        <CheckCircleIcon className="h-4 w-4 mr-1 text-green-500 dark:text-green-300" /> Aktiv
+      </span>
+    ) : (
+      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-700 dark:text-red-100">
+        <XCircleIcon className="h-4 w-4 mr-1 text-red-500 dark:text-red-300" /> Joaktiv
+      </span>
+    );
   };
-
-  const currentStatusInfo = statusDisplayInfo[user.status] || { text: user.status, colorClasses: 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-200' };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-      return new Date(dateString).toLocaleDateString('sq-AL', {
-        year: 'numeric', month: 'short', day: 'numeric', /* hour: '2-digit', minute: '2-digit' */
-      });
-    } catch (error) { return "Datë invalide"; }
-  };
-  
-  const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username;
 
   return (
-    <tr className="bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150">
-      <td className="px-5 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-        {user.id}
+    <tr className="hover:bg-gray-50 dark:hover:bg-slate-700/30 transition-colors">
+      <td className="px-4 py-3 whitespace-nowrap">
+        <div className="flex items-center">
+          <div className="flex-shrink-0 h-10 w-10">
+            <img 
+                className="h-10 w-10 rounded-full object-cover" 
+                src={user.profile_picture_url || `https://ui-avatars.com/api/?name=${user.first_name || user.email[0]}&background=random&color=fff`} 
+                alt={`${user.first_name} ${user.last_name}`} 
+            />
+          </div>
+          <div className="ml-3">
+            <div className="text-sm font-medium text-gray-900 dark:text-white">{user.first_name} {user.last_name}</div>
+            <div className="text-xs text-gray-500 dark:text-slate-400">{user.email}</div>
+          </div>
+        </div>
       </td>
-      <td className="px-5 py-3 text-sm font-medium text-gray-800 dark:text-gray-100">
-        <div>{fullName}</div>
-        {fullName !== user.username && <div className="text-xs text-gray-500 dark:text-gray-400">@{user.username}</div>}
+      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-slate-300">{getRoleDisplay(user.role)}</td>
+      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-slate-300">{user.phone_number || 'N/A'}</td>
+      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400">{new Date(user.date_joined).toLocaleDateString('sq-AL')}</td>
+      <td className="px-4 py-3 whitespace-nowrap">
+        {getStatusPill(user.is_active)}
       </td>
-      <td className="px-5 py-3 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
-        {user.email}
-      </td>
-      <td className="px-5 py-3 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
-        {roleDisplayNames[user.role] || user.role}
-      </td>
-      <td className="px-5 py-3 whitespace-nowrap text-sm text-gray-600 dark:text-gray-300">
-        {formatDate(user.date_joined)}
-      </td>
-      <td className="px-5 py-3 whitespace-nowrap text-center">
-        <button
-          onClick={() => onToggleStatus(user.id, user.status)}
-          className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full cursor-pointer ${currentStatusInfo.colorClasses} hover:opacity-80 transition-opacity`}
-          title={`Kliko për të ndryshuar statusin (aktual: ${currentStatusInfo.text})`}
+      <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium space-x-1">
+        <Button variant="icon" onClick={() => onEdit(user)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200" title="Modifiko">
+          <PencilIcon className="h-5 w-5" />
+        </Button>
+        <Button variant="icon" onClick={() => onToggleStatus(user.id, !user.is_active)} 
+            className={user.is_active ? "text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 dark:hover:text-yellow-200" : "text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200"}
+            title={user.is_active ? "Çaktivizo" : "Aktivizo"}
         >
-          {currentStatusInfo.text}
-        </button>
-      </td>
-      <td className="px-5 py-3 whitespace-nowrap text-right text-sm font-medium space-x-1">
-        <Button variant="ghost" size="sm" onClick={() => onEdit(user)} title="Modifiko Përdoruesin" className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
-          <HeroIcon icon="PencilSquareIcon" className="h-4 w-4" />
+          {user.is_active ? <XCircleIcon className="h-5 w-5" /> : <CheckCircleIcon className="h-5 w-5" />}
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => onResetPassword(user.id)} title="Reset Fjalëkalimin" className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-          <HeroIcon icon="KeyIcon" className="h-4 w-4" />
+        <Button variant="icon" onClick={() => onResetPassword(user.id)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Reset Fjalëkalimin">
+          <KeyIcon className="h-5 w-5" />
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => onDelete(user.id)} className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300" title="Fshij Përdoruesin">
-          <HeroIcon icon="TrashIcon" className="h-4 w-4" />
+        <Button variant="icon" onClick={() => onDelete(user.id)} className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200" title="Fshij">
+          <TrashIcon className="h-5 w-5" />
         </Button>
       </td>
     </tr>
