@@ -104,7 +104,8 @@ const RestaurantOwnerLayout = () => {
                   variant="ghost"
                   size="sm"
                   className="text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                  iconLeft={<ArrowRightOnRectangleIcon className="h-5 w-5"/>}
+                  iconLeft={ArrowRightOnRectangleIcon}
+                  iconLeftClassName="h-5 w-5"
                 >
                   <span className="hidden sm:inline">Dilni</span>
                 </Button>

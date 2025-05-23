@@ -3,124 +3,123 @@ import React from 'react';
 import { ArrowPathIcon, TruckIcon, BuildingStorefrontIcon, MapPinIcon, QueueListIcon, ArchiveBoxArrowDownIcon, CheckBadgeIcon, CheckCircleIcon, PhoneIcon } from '@heroicons/react/24/outline';
 import Button from '../../../components/Button';
 import { useTasks } from '../../../context/TaskContext.jsx';
+import { useNotification } from '../../../context/NotificationContext.jsx';
 
 const ActiveDeliverySection = () => {
-  // Përdor emrat e props-ave nga TaskContext i përditësuar
   const { activeTask, updateActiveTaskStatus, isLoadingActiveTask, isLoadingUpdateStatus } = useTasks();
+  
+  const notification = useNotification(); 
 
-  if (isLoadingActiveTask && !activeTask) { // Trego loader vetëm nëse nuk ka detyrë të ngarkuar ende
+  if (isLoadingActiveTask && !activeTask) {
     return (
-      <div className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-6 text-center min-h-[300px] flex flex-col justify-center items-center">
-        <ArrowPathIcon className="animate-spin h-10 w-10 text-primary-500 dark:text-primary-400 mx-auto mb-4" />
-        <p className="text-gray-600 dark:text-slate-300">Duke ngarkuar detyrën aktive...</p>
+      <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-6 text-center">
+        <svg className="animate-spin h-8 w-8 text-primary-500 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V4a10 10 0 00-9.95 9.5H2a1 1 0 00-1 1v2a1 1 0 001 1h.05A10 10 0 0012 22v-4a8 8 0 01-8-8H4z"></path>
+        </svg>
+        <p className="text-gray-600 dark:text-slate-300">Duke kontrolluar për detyrë aktive...</p>
       </div>
     );
   }
 
   if (!activeTask) {
     return (
-      <div className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-6 text-center min-h-[300px] flex flex-col justify-center items-center">
-        <TruckIcon className="h-16 w-16 text-gray-300 dark:text-slate-600 mx-auto mb-4 opacity-50" />
-        <h3 className="text-lg font-medium text-gray-700 dark:text-slate-300">Nuk ka Dërgesë Aktive</h3>
-        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Pasi të pranoni një detyrë, detajet do të shfaqen këtu.</p>
+      <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-6 text-center">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400 dark:text-slate-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+        </svg>
+        <p className="text-lg font-semibold text-gray-700 dark:text-slate-200">Nuk keni asnjë detyrë aktive.</p>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Detyrat e pranuara do të shfaqen këtu.</p>
       </div>
     );
   }
 
-  // Supozojmë se activeTask ka fushat: id, orderId, status, restaurantName, restaurantAddress, 
-  // customerName, customerAddress, itemsSummary, deliveryInstructions, payout
-  // Këto vijnë nga transformTaskDataForFrontend te TaskContext
-
   const handleStatusUpdate = (newFrontendStatus) => {
     if (activeTask) {
-      updateActiveTaskStatus(newFrontendStatus); // Ky funksion te TaskContext e bën konvertimin në backend status
+      updateActiveTaskStatus(newFrontendStatus);
     }
   };
 
-  // Përcakto veprimet bazuar në statusin e frontend-it (me hapësira, shkronja të vogla)
-  const getNextAction = () => {
-    switch (activeTask.status) {
-      case 'assigned': // Ose çfarëdo statusi që kthen API pasi shoferi e pranon
-      case 'confirmed': // Nëse API kthen 'confirmed' pasi shoferi pranon
-        return { label: "Kam Marrë Porosinë", action: () => handleStatusUpdate('picked up'), icon: "ArchiveBoxArrowDownIcon", variant:"yellow" };
-      case 'picked up':
-        return { label: "Nis Dërgesën", action: () => handleStatusUpdate('en route'), icon: "TruckIcon", variant:"indigo" };
-      case 'en route':
-        return { label: "Dërgesa u Krye", action: () => handleStatusUpdate('delivered'), icon: "CheckBadgeIcon", variant:"green" };
-      default:
-        return null;
-    }
-  };
+  let nextActions = [];
+  if (activeTask.status === 'assigned' || activeTask.status === 'accepted') {
+    nextActions.push({ label: 'Kam Arritur te Restoranti', newStatus: 'REACHED_RESTAURANT' });
+  } else if (activeTask.status === 'reached restaurant') {
+    nextActions.push({ label: 'Kam Marrë Porosinë', newStatus: 'PICKED_UP' });
+  } else if (activeTask.status === 'picked up') {
+    nextActions.push({ label: 'Kam Arritur te Klienti', newStatus: 'REACHED_CUSTOMER' });
+  } else if (activeTask.status === 'reached customer') {
+    nextActions.push({ label: 'Porosia u Dorëzua', newStatus: 'DELIVERED' });
+    nextActions.push({ label: 'Dorëzimi Dështoi', newStatus: 'FAILED_DELIVERY' });
+  }
 
-  const nextActionDetails = getNextAction();
-  const currentStatusDisplay = activeTask.status.charAt(0).toUpperCase() + activeTask.status.slice(1);
 
   return (
-    <div className="bg-gradient-to-br from-primary-600 to-secondary-600 dark:from-slate-800 dark:to-slate-900 shadow-2xl rounded-xl p-5 sm:p-6 md:p-8 text-white">
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-5 sm:mb-6">
-        <h2 className="text-xl sm:text-2xl md:text-3xl font-bold mb-2 sm:mb-0">Dërgesa Aktive: #{activeTask.orderId}</h2>
-        <span className={`px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-full shadow-sm
-            ${activeTask.status === 'delivered' ? 'bg-green-400 text-green-900' : 
-              activeTask.status === 'picked up' || activeTask.status === 'en route' ? 'bg-blue-400 text-blue-900' :
-              activeTask.status === 'assigned' || activeTask.status === 'confirmed' ? 'bg-yellow-400 text-yellow-900' :
-              'bg-gray-300 text-gray-800'}`}>
-          {currentStatusDisplay}
-        </span>
+    <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 sm:p-6">
+      <h2 className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white mb-4">Detyra Aktive</h2>
+      <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-4 space-y-3">
+        <div>
+          <span className="text-xs font-medium text-gray-500 dark:text-slate-400">ID Porosisë:</span>
+          <p className="text-gray-800 dark:text-slate-100 font-semibold">#{activeTask.orderId}</p>
+        </div>
+        <div>
+          <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Statusi:</span>
+          <p className={`text-sm font-semibold capitalize px-2 py-0.5 inline-block rounded-full ${
+            activeTask.status === 'delivered' ? 'bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-200' :
+            activeTask.status === 'picked up' ? 'bg-blue-100 text-blue-700 dark:bg-blue-700 dark:text-blue-200' :
+            activeTask.status === 'failed delivery' ? 'bg-red-100 text-red-700 dark:bg-red-700 dark:text-red-200' :
+            'bg-yellow-100 text-yellow-700 dark:bg-yellow-700 dark:text-yellow-200'
+          }`}>
+            {activeTask.status}
+          </p>
+        </div>
+        <div>
+          <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Restoranti:</span>
+          <p className="text-gray-800 dark:text-slate-100">{activeTask.restaurantName}</p>
+          <p className="text-xs text-gray-500 dark:text-slate-400">{activeTask.restaurantAddress}</p>
+        </div>
+        <div>
+          <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Klienti:</span>
+          <p className="text-gray-800 dark:text-slate-100">{activeTask.customerName}</p>
+          <p className="text-xs text-gray-500 dark:text-slate-400">{activeTask.customerAddress}</p>
+        </div>
+        {activeTask.itemsSummary && (
+          <div>
+            <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Artikujt:</span>
+            <p className="text-xs text-gray-600 dark:text-slate-300">{activeTask.itemsSummary}</p>
+          </div>
+        )}
+        {activeTask.deliveryInstructions && (
+          <div>
+            <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Shënime Dërgese:</span>
+            <p className="text-xs text-gray-600 dark:text-slate-300 bg-yellow-50 dark:bg-yellow-500/10 p-2 rounded-md">{activeTask.deliveryInstructions}</p>
+          </div>
+        )}
+         <div>
+          <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Pagesa për Ty:</span>
+          <p className="text-lg font-bold text-green-600 dark:text-green-400">{activeTask.payout?.toFixed(2) || '0.00'}€</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6">
-        <div className="bg-white/10 dark:bg-black/20 p-4 rounded-lg backdrop-blur-sm">
-          <h3 className="text-md sm:text-lg font-semibold text-yellow-300 mb-2 flex items-center">
-            <BuildingStorefrontIcon className="h-5 w-5 mr-2 flex-shrink-0" /> Merr Nga:
-          </h3>
-          <p className="text-sm font-medium text-primary-50 dark:text-slate-100">{activeTask.restaurantName}</p>
-          <p className="text-xs text-primary-100 dark:text-slate-300 truncate" title={activeTask.restaurantAddress}>{activeTask.restaurantAddress}</p>
+      {nextActions.length > 0 && (
+        <div className="mt-5 space-y-2">
+          <p className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Përditëso Statusin:</p>
+          {nextActions.map(action => (
+            <button
+              key={action.newStatus}
+              onClick={() => handleStatusUpdate(action.newStatus)} // Pass backend status directly
+              disabled={isLoadingUpdateStatus}
+              className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-primary-600 rounded-lg shadow-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed transition ease-in-out duration-150"
+            >
+              {isLoadingUpdateStatus ? (
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V4a10 10 0 00-9.95 9.5H2a1 1 0 00-1 1v2a1 1 0 001 1h.05A10 10 0 0012 22v-4a8 8 0 01-8-8H4z"></path>
+                </svg>
+              ) : null}
+              {action.label}
+            </button>
+          ))}
         </div>
-        <div className="bg-white/10 dark:bg-black/20 p-4 rounded-lg backdrop-blur-sm">
-          <h3 className="text-md sm:text-lg font-semibold text-yellow-300 mb-2 flex items-center">
-            <MapPinIcon className="h-5 w-5 mr-2 flex-shrink-0" /> Dërgo Tek:
-          </h3>
-          <p className="text-sm font-medium text-primary-50 dark:text-slate-100">{activeTask.customerName}</p>
-          <p className="text-xs text-primary-100 dark:text-slate-300 truncate" title={activeTask.customerAddress}>{activeTask.customerAddress}</p>
-        </div>
-      </div>
-      
-      {activeTask.deliveryInstructions && 
-        <div className="mb-5 bg-white/5 dark:bg-black/10 p-3 rounded-lg">
-            <p className="text-xs sm:text-sm text-yellow-200 dark:text-yellow-300"><span className="font-semibold">Udhëzime:</span> {activeTask.deliveryInstructions}</p>
-        </div>
-      }
-      
-      <div className="mb-6 bg-white/10 dark:bg-black/20 p-4 rounded-lg backdrop-blur-sm">
-        <h3 className="text-md sm:text-lg font-semibold text-yellow-300 mb-2 flex items-center">
-            <QueueListIcon className="h-5 w-5 mr-2" /> Përmbledhja e Porosisë
-        </h3>
-        <p className="text-xs sm:text-sm text-primary-100 dark:text-slate-300 mb-2 truncate" title={activeTask.itemsSummary}>Artikujt: {activeTask.itemsSummary}</p>
-        <p className="text-right text-md sm:text-lg font-semibold mt-2 text-yellow-300">Pagesa për Ty: {activeTask.payout?.toFixed(2)} €</p>
-      </div>
-
-      {nextActionDetails && (
-        <div className="mt-6 sm:mt-8 text-center">
-          <Button
-            variant={nextActionDetails.variant || "primary"}
-            size="lg"
-            onClick={nextActionDetails.action}
-            isLoading={isLoadingUpdateStatus} // Përdor këtë nga context
-            className={`font-bold w-full md:w-auto shadow-lg transition-transform hover:scale-105 text-white 
-                        ${nextActionDetails.variant === 'yellow' ? 'bg-yellow-500 hover:bg-yellow-400' :
-                          nextActionDetails.variant === 'indigo' ? 'bg-indigo-500 hover:bg-indigo-400' :
-                          nextActionDetails.variant === 'green' ? 'bg-green-500 hover:bg-green-400' :
-                         'bg-primary-500 hover:bg-primary-400'}`} // Siguro ngjyra te sakta
-            iconLeft={<nextActionDetails.icon className="h-5 w-5"/>}
-          >
-            {nextActionDetails.label}
-          </Button>
-        </div>
-      )}
-      {activeTask.status === 'delivered' && (
-         <p className="text-center mt-5 text-green-300 font-semibold text-lg flex items-center justify-center gap-2">
-            <CheckCircleIcon className="h-6 w-6"/> Dërgesa u kompletua me sukses!
-         </p>
       )}
     </div>
   );

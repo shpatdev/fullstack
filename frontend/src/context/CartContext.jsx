@@ -1,144 +1,180 @@
 // src/context/CartContext.jsx
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import { customerApi } from '../api/customerApi.js'; // Sigurohu që path është i saktë
-import { useAuth } from './AuthContext.jsx'; // Sigurohu që path është i saktë
+import { customerApi } from '../api/customerApi.js';
+import { useAuth } from './AuthContext.jsx';
 
-const CartContext = createContext(null); // Jep një vlerë fillestare null ose një objekt default
+const CartContext = createContext();
+
+export const useCart = () => useContext(CartContext);
 
 export const CartProvider = ({ children }) => {
-  const { user, isAuthenticated } = useAuth();
-  const [cart, setCart] = useState({ items: [], total_amount: "0.00", id: null });
-  const [isLoading, setIsLoading] = useState(false); // Mund ta bësh true fillimisht nëse fetchCart() thirret menjëherë
+  const [cart, setCart] = useState({ items: [], total_amount: "0.00", id: null, restaurant: null, restaurant_details: null });
+  const [isLoading, setIsLoading] = useState(true); // Default to true to show loading initially
   const [error, setError] = useState(null);
-
-  const getUserIdForCart = useCallback(() => {
-    // Kjo ndihmon për të pasur një ID konsistente për shportën, qoftë user.id ose 'GUEST'
-    // Mock API-ja jote përdor localStorage.getItem('mockUserId')
-    // Në një API real, backend-i do ta menaxhonte këtë bazuar në token ose sesion
-    return user?.id?.toString() || localStorage.getItem('mockUserId') || 'GUEST_CART';
-  }, [user]);
-
+  const { isAuthenticated, token, user } = useAuth();
 
   const fetchCart = useCallback(async () => {
-    // Nuk ka nevojë për kontrollin !isAuthenticated këtu, pasi customerApi.fetchUserCart()
-    // në versionin mock e menaxhon vetë ID-në e përdoruesit ose mysafirit nga localStorage.
-    // Për API reale, kjo do të kërkonte token.
+    // Ensure user object exists before checking its role
+    if (!isAuthenticated || !token || !user || user.role !== 'CUSTOMER') {
+        setCart({ items: [], total_amount: "0.00", id: null, restaurant: null, restaurant_details: null });
+        setIsLoading(false);
+        if (user && user.role !== 'CUSTOMER') {
+            console.log("CartContext: User is not a customer. Cart fetch skipped and cart cleared.");
+        } else if (!isAuthenticated || !token) {
+            console.log("CartContext: User not authenticated. Cart fetch skipped and cart cleared.");
+        }
+        return;
+    }
+
+    console.log("CartContext: Attempting to fetch cart for CUSTOMER.");
     setIsLoading(true);
     setError(null);
     try {
-      const fetchedCart = await customerApi.fetchUserCart(); // Kjo përdor mockUserId nga localStorage te mock API
-      setCart(fetchedCart || { items: [], total_amount: "0.00", id: null });
-      console.log("CartContext: Cart fetched/re-synced", fetchedCart);
+      // Ensure this calls the correct endpoint, e.g., /cart/my-cart/ if that's what your backend expects
+      const fetchedCart = await customerApi.fetchUserCart(); 
+      if (fetchedCart) {
+        setCart({
+          id: fetchedCart.id,
+          items: fetchedCart.items || [],
+          total_amount: fetchedCart.total_amount || "0.00",
+          restaurant: fetchedCart.restaurant, // assuming backend sends restaurant ID
+          restaurant_details: fetchedCart.restaurant_details // assuming backend sends restaurant details
+        });
+      } else {
+        // If backend returns null or undefined (e.g. 204 No Content for an empty/new cart)
+        setCart({ items: [], total_amount: "0.00", id: null, restaurant: null, restaurant_details: null });
+      }
     } catch (err) {
-      console.error("CartContext: Error fetching cart:", err);
+      console.error("CartContext: Failed to fetch cart", err);
       setError(err.message || "Failed to fetch cart.");
+      // Potentially set cart to empty on error too, or keep stale data?
+      // setCart({ items: [], total_amount: "0.00", id: null, restaurant: null, restaurant_details: null });
     } finally {
       setIsLoading(false);
     }
-  }, []); // Hiq isAuthenticated si dependencë, pasi fetchCart do të thirret kur user ndryshon
+  }, [isAuthenticated, token, user]); // user is a dependency
 
   useEffect(() => {
-    // Thirre fetchCart kur komponenti montohet ose kur user ndryshon (login/logout)
-    fetchCart();
-  }, [fetchCart, user]); // user si dependencë që të rifreskohet shporta kur ndryshon përdoruesi
+    console.log("CartContext - fetchCart effect triggered. isAuthenticated:", isAuthenticated, "User role:", user?.role, "Token present:", !!token); // ADDED LOG
+    if (isAuthenticated && token && user && user.role === 'CUSTOMER') {
+      console.log("CartContext: Auth state changed, user is customer, fetching cart.");
+      fetchCart();
+    } else if (!isAuthenticated || (user && user.role !== 'CUSTOMER')) {
+      // Clear cart if user logs out or is not a customer
+      console.log("CartContext: User logged out or not a customer, clearing local cart.");
+      setCart({ items: [], total_amount: "0.00", id: null, restaurant: null, restaurant_details: null });
+      setIsLoading(false); // Ensure loading is set to false
+    }
+  }, [isAuthenticated, token, user, fetchCart]); // fetchCart is a dependency
 
-  const addItemToCart = async (menuItem, quantity = 1) => {
+  const addItemToCart = async (menuItemId, quantity, restaurantId) => {
+    if (!isAuthenticated) {
+      setError("Ju lutem kyçuni për të shtuar në shportë."); // Ose ridrejto te login
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
-      // Mock API-ja customerApi.addItemToCart përdor localStorage dhe mockUserId
-      await customerApi.addItemToCart(menuItem.id, quantity, menuItem); 
-      await fetchCart(); // Rifresko shportën nga burimi (localStorage për mock)
-      console.log("CartContext: Item added", menuItem.name);
+      const updatedCart = await customerApi.addItemToCart(menuItemId, quantity); 
+      setCart(updatedCart); // API duhet të kthejë shportën e përditësuar
+      console.log("CartContext: Item added to backend cart", menuItemId);
     } catch (err) {
-      console.error("CartContext: Error adding item to cart:", err);
-      setError(err.message || "Failed to add item.");
-      throw err; 
+      console.error("CartContext: Error adding item to backend cart:", err);
+      setError(err.response?.data?.detail || err.message || "Failed to add item."); // Shfaq mesazhin nga backend
+      // Mos e thirr fetchCart() këtu, pasi API duhet të kthejë gjendjen e re
+      // Nëse API nuk kthen gjendjen e re, atëherë thirre fetchCart()
+      // throw err; // Mund ta ri-hedhësh gabimin nëse komponenti UI e trajton
     } finally {
       setIsLoading(false);
     }
   };
 
   const updateCartItemQuantity = async (cartItemId, newQuantity) => {
+    if (!isAuthenticated) { setError("Ju lutem kyçuni."); return; }
     setIsLoading(true);
     setError(null);
     try {
-      await customerApi.updateCartItemQuantity(cartItemId, newQuantity);
-      await fetchCart(); 
-      console.log("CartContext: Item quantity updated", cartItemId);
+      // API duhet të pranojë ID të CartItem, jo MenuItem
+      const updatedCart = await customerApi.updateCartItemQuantity(cartItemId, newQuantity);
+      setCart(updatedCart);
+      console.log("CartContext: Item quantity updated in backend cart", cartItemId);
     } catch (err) {
-      console.error("CartContext: Error updating item quantity:", err);
+      console.error("CartContext: Error updating item quantity in backend:", err);
       setError(err.message || "Failed to update quantity.");
-      throw err;
+      // throw err;
     } finally {
       setIsLoading(false);
     }
   };
 
   const removeCartItem = async (cartItemId) => {
+    if (!isAuthenticated) { setError("Ju lutem kyçuni."); return; }
     setIsLoading(true);
     setError(null);
     try {
-      await customerApi.removeCartItem(cartItemId);
-      await fetchCart();
-      console.log("CartContext: Item removed", cartItemId);
+      // API duhet të pranojë ID të CartItem
+      const updatedCart = await customerApi.removeCartItem(cartItemId);
+      setCart(updatedCart);
+      console.log("CartContext: Item removed from backend cart", cartItemId);
     } catch (err) {
-      console.error("CartContext: Error removing item from cart:", err);
+      console.error("CartContext: Error removing item from backend cart:", err);
       setError(err.message || "Failed to remove item.");
-      throw err;
+      // throw err;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const clearCart = async () => {
+  const clearCartContextAndApi = async () => { // Riemërtoje për qartësi
+    if (!isAuthenticated) { setError("Ju lutem kyçuni."); return; }
     setIsLoading(true);
     setError(null);
     try {
-        const cartKey = `mockCustomerCartItems_${getUserIdForCart()}`;
-        localStorage.removeItem(cartKey); // Logjika e mock API-së
-        setCart({ items: [], total_amount: "0.00", id: cart.id }); // Reset state-in, mbaj ID-në e shportës nëse ka
-        // Në API reale: await customerApi.clearUserCart();
-        console.log("CartContext: Cart cleared.");
+        const updatedCart = await customerApi.clearUserCart(); // API duhet të kthejë shportën e zbrazur
+        setCart(updatedCart || { items: [], total_amount: "0.00", id: cart.id, restaurant: null }); 
+        console.log("CartContext: Cart cleared in backend.");
     } catch (err) {
-        console.error("CartContext: Error clearing cart:", err);
+        console.error("CartContext: Error clearing backend cart:", err);
         setError(err.message || "Failed to clear cart.");
-        throw err;
+        // throw err;
     } finally {
         setIsLoading(false);
     }
   };
 
   const getCartItemCount = useCallback(() => {
-    // Sigurohu që cart dhe cart.items ekzistojnë para se të bësh reduce
     return cart?.items?.reduce((count, item) => count + (item.quantity || 0), 0) || 0;
-  }, [cart?.items]); // Shto cart.items si dependencë për useCallback
+  }, [cart?.items]);
+
+  const getCartTotalAmount = useCallback(() => {
+    return parseFloat(cart?.total_amount || 0);
+  }, [cart?.total_amount]);
+
+  // Funksion për të marrë ID e restorantit nga shporta
+  // Kjo do të jetë e rëndësishme për të parandaluar shtimin e artikujve nga restorante të ndryshme
+  const getRestaurantIdFromCart = useCallback(() => {
+    return cart?.restaurant; // Ose cart?.restaurant_details?.id nëse API kthen objektin e plotë
+  }, [cart?.restaurant]);
+
 
   return (
     <CartContext.Provider
       value={{
         cart,
-        setCart, // Mund të jetë e nevojshme për teste ose raste specifike
-        fetchCart,
+        fetchCart, // Mund të thirret manualisht për rifreskim
         addItemToCart,
         updateCartItemQuantity,
         removeCartItem,
-        clearCart,       // Sigurohu që clearCart është këtu
-        getCartItemCount, // <-- SIGUROHU QË ËSHTË KËTU
+        clearCart: clearCartContextAndApi, // Përdor funksionin e ri       
+        getCartItemCount,
+        getCartTotalAmount, // Shto këtë
+        getRestaurantIdFromCart, // Shto këtë
         isLoading,
         error,
-        setError, // Mund ta ekspozosh nëse duhet ta pastrosh nga jashtë
+        setError,
       }}
     >
       {children}
     </CartContext.Provider>
   );
-};
-
-export const useCart = () => {
-  const context = useContext(CartContext);
-  if (context === undefined) {
-    throw new Error('useCart must be used within a CartProvider');
-  }
-  return context;
 };

@@ -83,6 +83,7 @@ const ManageUsersPage = () => {
 
   const handleDelete = async (userId) => {
     try {
+        // REAL API: await adminApi.deleteUser(userId);
         setIsLoading(true);
         await adminApi.deleteUser(userId, adminUser.token);
         setUsers(prev => prev.filter(u => u.id !== userId));
@@ -91,36 +92,30 @@ const ManageUsersPage = () => {
     finally { setIsLoading(false); }
   };
 
-  const handleToggleStatus = async (userId, currentStatus) => {
-    let newStatus;
-    // Define status transition logic
-    if (currentStatus === 'ACTIVE') newStatus = 'SUSPENDED';
-    else if (currentStatus === 'SUSPENDED') newStatus = 'ACTIVE';
-    else if (currentStatus === 'PENDING_APPROVAL') newStatus = 'ACTIVE'; // Example: Approve
-    else {
-        showError("Veprim i panjohur për statusin aktual.");
-        return;
-    }
+  const handleToggleStatus = async (userId, currentIsActive) => { // Changed currentStatus to currentIsActive
+    const newIsActive = !currentIsActive;
     
     try {
         setIsLoading(true);
-        const updatedUser = await adminApi.updateUser(userId, { status: newStatus }, adminUser.token);
-        setUsers(prev => prev.map(u => u.id === userId ? updatedUser : u));
-        showSuccess(`Statusi i përdoruesit (ID: ${userId}) u ndryshua në ${newStatus}.`);
-    } catch (err) { showError(err.message || `Gabim gjatë ndryshimit të statusit.`); }
+        // Pass adminUser.token if your apiService doesn't automatically inject it from AuthContext
+        const updatedUser = await adminApi.updateUser(userId, { is_active: newIsActive }); 
+        setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_active: newIsActive } : u)); // Update local state
+        showSuccess(`Statusi i përdoruesit (ID: ${userId}) u ndryshua në ${newIsActive ? 'Aktiv' : 'Joaktiv'}.`);
+    } catch (err) { 
+        showError(err.message || `Gabim gjatë ndryshimit të statusit.`); 
+        // Optionally revert local state if API call fails
+    }
     finally { setIsLoading(false); }
   };
   
   const handleResetPassword = async (userId) => {
     // For a real app, this would trigger an email or show a new generated password.
-    // For mock, just show a success message.
     try {
         setIsLoading(true);
-        // await adminApi.resetUserPassword(userId, adminUser.token); // TODO: Implement API
-        await new Promise(resolve => setTimeout(resolve, 500)); // Mock
-        showSuccess(`Kërkesa për resetimin e fjalëkalimit për përdoruesin (ID: ${userId}) u dërgua (mock).`);
+        await adminApi.resetUserPasswordAdmin(userId); // Call the new API function
+        showSuccess(`Kërkesa për resetimin e fjalëkalimit për përdoruesin (ID: ${userId}) u dërgua.`);
     } catch (err) { showError(err.message || `Gabim gjatë resetimit të fjalëkalimit.`); }
-    finally { setIsLoading(false); }
+    finally { setIsLoading(false); } // Corrected finally block
   };
   
   const handleSearchChange = (e) => setSearchTerm(e.target.value);

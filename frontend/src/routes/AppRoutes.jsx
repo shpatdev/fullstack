@@ -1,50 +1,39 @@
 // src/routes/AppRoutes.jsx
-import React, { Suspense } from 'react';
-import { Routes, Route, Link as RouterLink, Navigate } from 'react-router-dom'; // Sigurohu që BrowserRouter është vetëm këtu ose te main.jsx
-
-// --- Layouts ---
-import AuthLayout from '../layouts/AuthLayout.jsx';
-import CustomerLayout from '../layouts/CustomerLayout.jsx';
-import RestaurantOwnerLayout from '../layouts/RestaurantOwnerLayout.jsx';
-import DriverLayout from '../layouts/DriverLayout.jsx';
-import AdminLayout from '../layouts/AdminLayout.jsx';
-
-// --- Protected Route Component ---
+import React, { Suspense, lazy } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from '../components/ProtectedRoute.jsx';
+import LoadingFallback from '../components/LoadingFallback.jsx'; // Keep this import
+
+// Layouts
+const AuthLayout = lazy(() => import('../layouts/AuthLayout.jsx'));
+const CustomerLayout = lazy(() => import('../layouts/CustomerLayout.jsx'));
+const RestaurantOwnerLayout = lazy(() => import('../layouts/RestaurantOwnerLayout.jsx'));
+const DriverLayout = lazy(() => import('../layouts/DriverLayout.jsx'));
+const AdminLayout = lazy(() => import('../layouts/AdminLayout.jsx'));
 
 // --- Auth Pages ---
-import LoginPage from '../modules/auth/pages/Login.jsx';
-import RegisterPage from '../modules/auth/pages/RegisterPage.jsx';
-import AdminLoginPage from '../modules/auth/pages/AdminLoginPage.jsx';
+const LoginPage = lazy(() => import('../modules/auth/pages/Login.jsx'));
+const RegisterPage = lazy(() => import('../modules/auth/pages/RegisterPage.jsx'));
+const AdminLoginPage = lazy(() => import('../modules/auth/pages/AdminLoginPage.jsx'));
+
 
 // --- Customer Pages ---
-import RestaurantListPage from '../modules/customer/pages/RestaurantListPage.jsx';
-import RestaurantDetailPage from '../modules/customer/pages/RestaurantDetailPage.jsx';
-import CartPage from '../modules/customer/pages/CartPage.jsx';
-import ProfilePage from '../modules/customer/pages/ProfilePage.jsx';
-import CheckoutPage from '../modules/customer/pages/CheckoutPage.jsx';
-import OrderConfirmationPage from '../modules/customer/pages/OrderConfirmationPage.jsx';
-import MyOrdersPage from '../modules/customer/pages/MyOrdersPage.jsx';
+const RestaurantListPage = lazy(() => import('../modules/customer/pages/RestaurantListPage.jsx'));
+const RestaurantDetailPage = lazy(() => import('../modules/customer/pages/RestaurantDetailPage.jsx'));
+const CheckoutPage = lazy(() => import('../modules/customer/pages/CheckoutPage.jsx')); // Keep if directly used, or ensure CustomerRoutesArray covers it
+const OrderConfirmationPage = lazy(() => import('../modules/customer/pages/OrderConfirmationPage.jsx')); // Keep if directly used
 
-// --- Courier/Driver Pages ---
-import DriverDashboardPage from '../modules/courier/pages/DriverDashboardPage.jsx';
-// Faqet e Admin dhe Restaurant Owner NUK importohen më direkt këtu,
-// ato do të renderizohen nga AdminRoutes dhe RestaurantOwnerRoutes
+
+// --- Driver/Courier Pages ---
+const DriverDashboardPage = lazy(() => import('../modules/courier/pages/DriverDashboardPage.jsx'));
+
 
 // --- Import Arrays of Routes from Modules ---
-import AdminRoutesArray from '../modules/admin/routes.jsx'; // Emërtoje ndryshe për qartësi
-import RestaurantOwnerRoutesArray from '../modules/restaurant/routes.jsx'; // Emërtoje ndryshe
-import CustomerRoutesArray from '../modules/customer/routes.jsx'; // Import customer routes array
+// Ensure these files exist and export arrays of <Route> elements
+import AdminRoutesArray from '../modules/admin/routes.jsx';
+import RestaurantOwnerRoutesArray from '../modules/restaurant/routes.jsx';
+import CustomerRoutesArray from '../modules/customer/routes.jsx';
 
-// Fallback loading component
-const LoadingFallback = () => (
-  <div className="flex justify-center items-center h-screen w-screen bg-gray-100 dark:bg-gray-900">
-    <div className="animate-spin rounded-full h-20 w-20 border-t-4 border-b-4 border-primary-500"></div>
-    <p className="ml-4 text-lg text-gray-700 dark:text-gray-300">Duke ngarkuar...</p>
-  </div>
-);
-
-// Main Router Component
 const AppRouter = () => {
   return (
     <Suspense fallback={<LoadingFallback />}>
@@ -54,8 +43,6 @@ const AppRouter = () => {
           <Route path="login" element={<LoginPage />} />
           <Route path="register" element={<RegisterPage />} />
           <Route path="admin-login" element={<AdminLoginPage />} />
-          {/* Add other auth routes like forgot-password if needed */}
-          {/* <Route path="forgot-password" element={<ForgotPasswordPage />} /> */}
           <Route index element={<Navigate to="login" replace />} />
         </Route>
 
@@ -68,7 +55,6 @@ const AppRouter = () => {
             </ProtectedRoute>
           }
         >
-          {/* Render customer routes from the array */}
           {CustomerRoutesArray}
         </Route>
 
@@ -81,7 +67,6 @@ const AppRouter = () => {
             </ProtectedRoute>
           }
         >
-          {/* Render restaurant owner routes from the array */}
           {RestaurantOwnerRoutesArray}
         </Route>
 
@@ -94,9 +79,9 @@ const AppRouter = () => {
             </ProtectedRoute>
           }
         >
+          {/* Define specific driver routes here if not in an array */}
           <Route path="dashboard" element={<DriverDashboardPage />} />
           <Route index element={<Navigate to="dashboard" replace />} />
-          {/* Add other driver-specific routes here if any */}
         </Route>
 
         {/* Admin Routes */}
@@ -108,34 +93,32 @@ const AppRouter = () => {
             </ProtectedRoute>
           }
         >
-          {/* Render admin routes from the array */}
           {AdminRoutesArray}
         </Route>
 
-        {/* Public/Fallback Routes */}
-        {/* Default redirect to customer restaurants page */}
-        <Route path="/" element={<Navigate to="/customer/restaurants" replace />} />
+        {/* Default route */}
+        {/* Consider what the true default path should be. If it's for customers, this is fine.
+            If it depends on role after login, Login.jsx handles that.
+            This redirect primarily handles unauthenticated users hitting the root path.
+        */}
+        <Route path="/" element={<Navigate to="/customer/restaurants" replace />} /> 
         
-        {/* Catch-all 404 Not Found Page */}
-        <Route 
-          path="*" 
+        {/* Fallback 404 Page - Consider creating a dedicated 404 component */}
+        <Route
+          path="*"
           element={
-            <div className="flex flex-col justify-center items-center h-screen bg-gray-100 dark:bg-gray-900">
-              <h1 className="text-4xl font-bold text-primary-600 dark:text-primary-400 mb-4">404</h1>
-              <p className="text-xl text-gray-700 dark:text-gray-300 mb-8">Faqja nuk u gjet!</p>
-              <RouterLink 
-                to="/" 
-                className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-              >
-                Kthehu te Faqja Kryesore
-              </RouterLink>
+            <div className="flex flex-col items-center justify-center h-screen text-center bg-gray-100 dark:bg-slate-900">
+              <h1 className="text-6xl font-bold text-primary-500">404</h1>
+              <p className="text-2xl font-medium text-gray-700 dark:text-slate-300 mt-4">Faqja nuk u gjet</p>
+              <p className="text-gray-500 dark:text-slate-400 mt-2">Na vjen keq, faqja që po kërkoni nuk ekziston.</p>
+              {/* You can add a Link component here to navigate back to home if needed */}
+              {/* <RouterLink to="/" className="mt-6 px-4 py-2 bg-primary-500 text-white rounded hover:bg-primary-600">Kthehu te Kryefaqja</RouterLink> */}
             </div>
-          } 
+          }
         />
       </Routes>
     </Suspense>
   );
 };
 
-// Export AppRouter directly. BrowserRouter should be in main.jsx or App.jsx.
 export default AppRouter;

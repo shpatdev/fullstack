@@ -3,10 +3,11 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer as BaseTokenObtainPairSerializer
 from rest_framework_simplejwt.exceptions import AuthenticationFailed # Importo këtë
-from .models import Order, OrderItem # Shto importet
 from .models import (
     Address, CuisineType, Restaurant, OperatingHours, 
-    MenuCategory, MenuItem, Review, DriverProfile, ReviewReply # Shto DriverProfile dhe ReviewReply
+    MenuCategory, MenuItem, Review, DriverProfile, ReviewReply, # Shto DriverProfile dhe ReviewReply
+    Order, OrderItem, # Shto Order, OrderItem
+    Cart, CartItem # SHTO MODELET E REJA
 )
 
 User = get_user_model()
@@ -48,6 +49,68 @@ class UserDetailSerializer(serializers.ModelSerializer):
             except DriverProfile.DoesNotExist:
                 return None
         return None
+
+class UserAdminManagementSerializer(serializers.ModelSerializer):
+    """Serializer për adminin për të menaxhuar përdoruesit. Lejon modifikimin e rolit, statusit, etj."""
+    full_name = serializers.CharField(read_only=True)
+    # Fusha 'password' mund të shtohet këtu si write_only=True nëse admini do të vendosë fjalëkalim gjatë krijimit
+    # password = serializers.CharField(write_only=True, required=False, allow_blank=True, style={'input_type': 'password'})
+
+    class Meta:
+        model = User
+        fields = (
+            'id', 'email', 'first_name', 'last_name', 'full_name', 'role',
+            'phone_number', 'bio', # profile_picture trajtohet me ImageField nëse admini e ngarkon
+            'is_staff', 'is_active', 'date_joined', 'is_available_for_delivery'
+            # 'password' # Shtoje këtu nëse e definon më lart
+        )
+        read_only_fields = ('id', 'email', 'date_joined', 'full_name')
+
+    def create(self, validated_data):
+        # Logjika për krijimin e userit nga admini
+        # Nëse 'password' është në validated_data, përdore atë, përndryshe gjenero një të rastësishëm ose kërko reset
+        
+        # Email duhet të jetë unik dhe i validuar, por User.objects.create_user e trajton këtë
+        # dhe serializeri do të bëjë validimin e email-it nëse ka një validator të tillë.
+        # Për siguri, mund të kontrollojmë këtu ose të mbështetemi te validimi i modelit/serializerit.
+        email = validated_data.get('email')
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError({"email": "Një përdorues me këtë email tashmë ekziston."})
+
+        password = validated_data.pop('password', None) # Hiq passwordin para se ta kalosh te create_user
+        
+        # Sigurohu që roli i dhënë është valid
+        role = validated_data.get('role', User.Role.CUSTOMER) # Default nëse nuk jepet
+        if role not in User.Role.values:
+            raise serializers.ValidationError({"role": f"Roli '{role}' nuk është i vlefshëm."})
+
+        user = User.objects.create_user(
+            email=email, 
+            password=password, # UserManager.create_user do ta bëjë hash
+            **validated_data # Kalo fushat e mbetura
+        )
+        return user
+
+    def update(self, instance, validated_data):
+        # Sigurohu që roli ADMIN të mos hiqet nga superuseri i fundit
+        if instance.is_superuser and 'role' in validated_data and validated_data['role'] != User.Role.ADMIN:
+            # Kontrollo nëse ky është superuseri i vetëm aktiv me rolin ADMIN
+            if User.objects.filter(is_superuser=True, role=User.Role.ADMIN, is_active=True).count() <= 1 and \
+               instance.pk == User.objects.filter(is_superuser=True, role=User.Role.ADMIN, is_active=True).first().pk:
+                raise serializers.ValidationError(
+                    {"role": "Nuk mund të hiqni rolin Admin nga superuser-i i vetëm aktiv."}
+                )
+        
+        # Admini nuk duhet të modifikojë fjalëkalimin këtu direkt; duhet të përdorë një action të dedikuar ose formën e admin panelit
+        validated_data.pop('password', None)
+        
+        # Email nuk duhet të modifikohet pas krijimit përmes këtij serializeri (është read_only_fields)
+        # por nëse do të lejohej, duhet të sigurohemi që nuk bëhet duplikat.
+        # if 'email' in validated_data and instance.email != validated_data['email']:
+        #     if User.objects.filter(email__iexact=validated_data['email']).exclude(pk=instance.pk).exists():
+        #         raise serializers.ValidationError({"email": "Ky email tashmë përdoret nga një tjetër përdorues."})
+
+        return super().update(instance, validated_data)
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     """
@@ -111,11 +174,13 @@ class OperatingHoursSerializer(serializers.ModelSerializer):
 class MenuItemSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     category = serializers.PrimaryKeyRelatedField(queryset=MenuCategory.objects.all(), write_only=False)
+    restaurant_id = serializers.IntegerField(source='restaurant.id', read_only=True) # SHTO KËTË
 
     class Meta:
         model = MenuItem
         fields = (
-            'id', 'category', 'category_name', 'name', 'description', 
+            'id', 'category', 'category_name', 'restaurant_id', # SHTO restaurant_id
+            'name', 'description', 
             'price', 'image', 'is_available' # Ndryshuar nga image_url_placeholder
         )
         # 'restaurant' do të lidhet automatikisht ose nga view
@@ -138,11 +203,14 @@ class RestaurantListSerializer(serializers.ModelSerializer):
     """
     cuisine_types = CuisineTypeSerializer(many=True, read_only=True)
     address_summary = serializers.StringRelatedField(source='address', read_only=True) 
+    main_image_url = serializers.ImageField(source='main_image', read_only=True, use_url=True) # Kthe URL-në
 
     class Meta:
         model = Restaurant
         fields = (
-            'id', 'name', 'main_image', 'cuisine_types', # Ndryshuar nga main_image_url_placeholder
+            'id', 'name', 
+            'main_image_url', # NDRESHA KETU, perdor emrin e ri te fushes
+            'cuisine_types', 
             'average_rating', 'delivery_time_estimate', 'price_range',
             'address_summary', 
             'is_active', 'is_approved' 
@@ -155,96 +223,179 @@ class RestaurantDetailSerializer(serializers.ModelSerializer):
     si dhe për krijimin dhe përditësimin e restoranteve.
     Lejon menaxhimin e adresës, orarit të punës dhe llojeve të kuzhinës.
     """
-    owner = UserDetailSerializer(read_only=True) 
+    owner_details = UserDetailSerializer(source='owner', read_only=True)
     owner_id = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.filter(role__in=[User.Role.RESTAURANT_OWNER, User.Role.ADMIN]), # Lejon adminin të jetë edhe pronar
-        source='owner', 
-        write_only=True, 
-        required=True,
-        allow_null=False
+        queryset=User.objects.filter(role__in=[User.Role.RESTAURANT_OWNER, User.Role.ADMIN]),
+        source='owner',
+        write_only=True,
+        required=False, # E bën jo të detyrueshme për update, por e trajtojmë te create
+        allow_null=True # Lejon adminin ta lërë bosh nëse do, ose të mos e dërgojë fare
     )
-    address = AddressSerializer(write_only=True)
-    operating_hours = OperatingHoursSerializer(many=True, write_only=True, source='operatinghours_set') # Korrigjuar source
+    address_details = AddressSerializer(source='address', read_only=True)
+    address = AddressSerializer(write_only=True, required=False) # Për input gjatë create/update
 
-    cuisine_types = CuisineTypeSerializer(many=True, read_only=True) # Për të shfaqur në GET
+    operating_hours_details = OperatingHoursSerializer(source='operating_hours', many=True, read_only=True)
+    operating_hours = OperatingHoursSerializer(many=True, write_only=True, required=False)
+
+    cuisine_types_details = CuisineTypeSerializer(source='cuisine_types', many=True, read_only=True)
     cuisine_type_ids = serializers.PrimaryKeyRelatedField(
-        queryset=CuisineType.objects.all(), 
-        many=True, 
-        write_only=True, 
-        source='cuisine_types', # Lidh me fushën 'cuisine_types' të modelit
+        queryset=CuisineType.objects.all(),
+        many=True,
+        write_only=True,
+        source='cuisine_types',
         required=False
     )
+    main_image_url = serializers.ImageField(source='main_image', read_only=True)
 
     class Meta:
         model = Restaurant
         fields = [
-            'id', 'owner', 'owner_id', 'name', 'description', 'phone_number', 
-            'main_image', 'cuisine_types', 'cuisine_type_ids', # Ndryshuar nga main_image_url_placeholder
-            'price_range', 'delivery_time_estimate', 'average_rating', 
+            'id', 'owner_details', 'owner_id', 'name', 'description', 'phone_number',
+            'main_image', 'main_image_url', 
+            'cuisine_types_details', 'cuisine_type_ids',
+            'price_range', 'delivery_time_estimate', 'average_rating',
             'is_approved', 'is_active', 'created_at', 'updated_at',
-            'address', 'operating_hours' 
+            'address_details', 'address', 
+            'operating_hours_details', 'operating_hours'
         ]
-        read_only_fields = ['id', 'average_rating', 'created_at', 'updated_at', 'owner', 'cuisine_types']
+        read_only_fields = ['id', 'average_rating', 'created_at', 'updated_at', 'owner_details', 'address_details', 'cuisine_types_details', 'operating_hours_details', 'main_image_url']
+        extra_kwargs = {
+            'main_image': {'write_only': True, 'required': False, 'allow_null': True} # Lejo të jetë null
+        }
 
     def create(self, validated_data):
-        # 1. Ndaj të dhënat për lidhjet nested dhe many-to-many
+        request = self.context.get('request')
+        user = request.user
+
         address_data = validated_data.pop('address', None)
-        # Përdor çelësin e saktë 'operatinghours_set' për shkak të source='operatinghours_set'
-        hours_data = validated_data.pop('operatinghours_set', None) 
-        # cuisine_types_data vjen nga source='cuisine_types' i cuisine_type_ids
-        cuisine_types_instances = validated_data.pop('cuisine_types', []) 
+        hours_data_list = validated_data.pop('operating_hours', [])
+        cuisine_type_instances = validated_data.pop('cuisine_types', [])
+        main_image_file = validated_data.pop('main_image', None)
 
-        # Debug: Shiko çfarë ka mbetur te validated_data para krijimit të Restaurant
-        print("Validated data para krijimit të Restaurant:", validated_data)
-
-        # 2. Krijo instancën kryesore Restaurant
-        # validated_data tani duhet të përmbajë vetëm fushat direkte të Restaurant
-        # (p.sh., name, description, owner (instancë), etj.)
-        restaurant = Restaurant.objects.create(**validated_data)
-
-        # 3. Krijo dhe lidh objektet nested (OneToOne si Address)
-        if address_data:
-            address_instance = Address.objects.create(**address_data)
-            restaurant.address = address_instance
-            restaurant.save() # Ruaj restorantin pasi të jetë lidhur adresa
-
-        # 4. Krijo objektet nested (nga ForeignKey te Restaurant, si OperatingHours)
-        if hours_data:
-            for hour_entry in hours_data:
-                OperatingHours.objects.create(restaurant=restaurant, **hour_entry)
+        owner_instance = validated_data.pop('owner', None) # Kjo vjen nga source='owner' i owner_id
         
-        # 5. Vendos lidhjet ManyToMany (CuisineType)
-        if cuisine_types_instances:
-            restaurant.cuisine_types.set(cuisine_types_instances) # .set() trajton ruajtjen për M2M
-            
+        if user.is_staff:
+            if not owner_instance: # Admini duhet të specifikojë owner_id për restorante të reja
+                raise serializers.ValidationError({"owner_id": "Admini duhet të specifikojë një pronar (owner_id) kur krijon restorant."})
+            # Sigurohu që owner_instance ka rolin e duhur
+            if owner_instance.role not in [User.Role.RESTAURANT_OWNER, User.Role.ADMIN]:
+                raise serializers.ValidationError({"owner_id": "Pronari i caktuar duhet të ketë rolin RESTAURANT_OWNER ose ADMIN."})
+            is_approved = validated_data.pop('is_approved', True) # Admini mund ta aprovojë direkt
+            is_active = validated_data.pop('is_active', True)   # Dhe ta bëjë aktiv
+        elif user.role == User.Role.RESTAURANT_OWNER:
+            owner_instance = user # Pronari krijon për vete
+            is_approved = False
+            is_active = False
+            # Hiq këto fusha nga validated_data nëse pronari nuk lejohet t'i vendosë gjatë krijimit
+            validated_data.pop('is_approved', None) 
+            validated_data.pop('is_active', None)
+        else:
+            # Kjo nuk duhet të ndodhë nëse lejet e view-it janë të sakta, por si masë sigurie.
+            raise serializers.ValidationError("Përdoruesi aktual nuk ka leje të krijojë restorant ose roli është i pasaktë.")
+        
+        restaurant = Restaurant.objects.create(
+            owner=owner_instance, 
+            is_approved=is_approved, 
+            is_active=is_active,
+            **validated_data
+        )
+
+        if main_image_file:
+            restaurant.main_image = main_image_file
+        
+        if address_data:
+            # Sigurohemi që `user` i kaluar te Address.objects.create është useri pronar i restorantit
+            address_data_user = owner_instance # Adresa duhet të lidhet me pronarin e restorantit
+            address_instance = Address.objects.create(user=address_data_user, **address_data)
+            restaurant.address = address_instance
+        
+        for hour_entry in hours_data_list:
+            OperatingHours.objects.create(restaurant=restaurant, **hour_entry)
+        
+        if cuisine_type_instances:
+            restaurant.cuisine_types.set(cuisine_type_instances)
+        
+        restaurant.save()
         return restaurant
 
     def update(self, instance, validated_data):
-        address_data = validated_data.pop('address', None)
-        # Përdor çelësin e saktë 'operatinghours_set' edhe këtu nëse e ke source='operatinghours_set'
-        hours_data = validated_data.pop('operatinghours_set', None) 
-        cuisine_types_data = validated_data.pop('cuisine_types', None)
+        request = self.context.get('request')
+        user = request.user
 
-        # Përditëso fushat standarde
-        instance = super().update(instance, validated_data)
+        address_data = validated_data.pop('address', None)
+        hours_data_list = validated_data.pop('operating_hours', None)
+        cuisine_type_instances = validated_data.pop('cuisine_types', None)
+        main_image_file = validated_data.pop('main_image', None)
+
+        if user.is_staff:
+            # Admini mund të ndryshojë pronarin
+            owner_instance_from_payload = validated_data.pop('owner', None) # Kjo vjen nga owner_id
+            if owner_instance_from_payload:
+                if owner_instance_from_payload.role not in [User.Role.RESTAURANT_OWNER, User.Role.ADMIN]:
+                     raise serializers.ValidationError({"owner_id": "Pronari i ri i caktuar duhet të ketë rolin RESTAURANT_OWNER ose ADMIN."})
+                instance.owner = owner_instance_from_payload
+            
+            # Admini mund të ndryshojë statusin e aprovimit dhe aktivizimit
+            instance.is_approved = validated_data.get('is_approved', instance.is_approved)
+            instance.is_active = validated_data.get('is_active', instance.is_active)
+        else: # Pronari i restorantit
+            # Pronari nuk mund të ndryshojë owner-in ose is_approved
+            validated_data.pop('owner', None) 
+            validated_data.pop('is_approved', None)
+            
+            # Për is_active, pronari mund ta ndryshojë vetëm nëse restoranti është i aprovuar.
+            # Kjo logjikë është më mirë të trajtohet nga një action specifik si `toggle_active_status`
+            # Por nëse duam ta lejojmë këtu:
+            if 'is_active' in validated_data:
+                new_active_status = validated_data.get('is_active')
+                if new_active_status and not instance.is_approved:
+                    raise serializers.ValidationError({"is_active": "Restoranti duhet të jetë i aprovuar nga administratori para se të mund të aktivizohet."})
+                instance.is_active = new_active_status
+            else:
+                # Nëse 'is_active' nuk është në payload, mos e ndrysho
+                validated_data.pop('is_active', None)
+
+
+        if main_image_file is not None: # Nëse një skedar i ri është ngarkuar
+            instance.main_image = main_image_file
+        elif 'main_image' in self.initial_data and self.initial_data['main_image'] is None:
+             # Nëse frontend-i dërgon main_image: null (ose një fushë e veçantë si clear_main_image: true)
+             # Kjo do të thotë që useri dëshiron ta heqë imazhin.
+            if instance.main_image: # Kontrollo nëse ka një imazh ekzistues para se të tentosh ta fshish
+                instance.main_image.delete(save=False) # Fshij skedarin nga storage
+            instance.main_image = None # Vendos fushën në None
+
+
+        # Përditëso fushat e tjera standarde të Restaurant
+        # Fushat si 'name', 'description', 'phone_number', 'price_range', 'delivery_time_estimate'
+        for attr, value in validated_data.items():
+            # Sigurohu që po vendos vetëm fushat që i përkasin direkt modelit Restaurant
+            # dhe nuk janë trajtuar tashmë (si owner, is_approved, is_active)
+            if hasattr(instance, attr) and attr not in ['owner', 'is_approved', 'is_active', 'main_image']:
+                setattr(instance, attr, value)
 
         if address_data:
             if instance.address:
-                address_serializer = AddressSerializer(instance.address, data=address_data, partial=True)
+                # Përditëso adresën ekzistuese, duke siguruar që useri i adresës mbetet pronari i restorantit
+                address_serializer = AddressSerializer(instance.address, data=address_data, partial=True, context=self.context)
                 if address_serializer.is_valid(raise_exception=True):
-                    address_serializer.save()
+                    # Sigurohu që useri i adresës nuk ndryshohet aksidentalisht nëse nuk është admin
+                    # Ose, më mirë, sigurohu që adresa i përket pronarit aktual të restorantit
+                    # Kjo duhet të jetë e garantuar nga logjika e lejeve ose duke mos e lejuar ndryshimin e userit të adresës.
+                    # Për thjeshtësi, këtu supozojmë se AddressSerializer nuk lejon ndryshimin e 'user' nga jo-adminët.
+                    address_serializer.save(user=instance.owner) # Forco userin e adresës të jetë pronari
             else:
-                new_address = Address.objects.create(**address_data)
+                # Krijo një adresë të re, duke e lidhur me pronarin e restorantit
+                new_address = Address.objects.create(user=instance.owner, **address_data)
                 instance.address = new_address
-                # instance.save() # Ruaj instancën pasi të jetë caktuar adresa e re
         
-        if hours_data is not None: # Lejon pastrimin e orarit nëse dërgohet array bosh
-            instance.operatinghours_set.all().delete() # Fshij oraret e vjetra
-            for hour_entry in hours_data:
+        if hours_data_list is not None: # Lejon pastrimin e orarit nëse dërgohet array bosh
+            instance.operating_hours.all().delete() # Fshij oraret e vjetra
+            for hour_entry in hours_data_list:
                 OperatingHours.objects.create(restaurant=instance, **hour_entry)
         
-        if cuisine_types_data is not None: # Lejon pastrimin e llojeve të kuzhinës
-            instance.cuisine_types.set(cuisine_types_data)
+        if cuisine_type_instances is not None: # Lejon pastrimin e llojeve të kuzhinës
+            instance.cuisine_types.set(cuisine_type_instances)
         
         instance.save() # Ruaj instancën në fund për të gjitha ndryshimet e mundshme
         return instance
@@ -389,10 +540,34 @@ class CustomTokenObtainPairSerializer(BaseTokenObtainPairSerializer):
         # print(f"CustomTokenObtainPairSerializer validate data to return: {data}")
         return data
 
+# === SERIALIZERS PËR SHPORTËN ===
+class CartItemSerializer(serializers.ModelSerializer):
+    menu_item_details = MenuItemSerializer(source='menu_item', read_only=True)
+    subtotal = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = CartItem
+        fields = ('id', 'menu_item', 'menu_item_details', 'quantity', 'subtotal', 'added_at')
+        read_only_fields = ('id', 'menu_item_details', 'subtotal', 'added_at')
+        # 'menu_item' do të jetë ID kur krijohet/përditësohet (nga payload-i)
+        # 'cart' do të lidhet automatikisht
+
+class CartSerializer(serializers.ModelSerializer):
+    items = CartItemSerializer(many=True, read_only=True)
+    total_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    restaurant_details = RestaurantListSerializer(source='restaurant', read_only=True)
+
+    class Meta:
+        model = Cart
+        fields = ('id', 'user', 'restaurant', 'restaurant_details', 'items', 'total_amount', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'user', 'total_amount', 'created_at', 'updated_at', 'restaurant_details')
+        # 'restaurant' ID mund të jetë writeable nëse lejon krijimin e shportës me restorant të caktuar
+        # Përndryshe, do të caktohet nga artikulli i parë i shtuar.
+# === FUNDI I SERIALIZERS PËR SHPORTËN ===
 
 class OrderItemSerializer(serializers.ModelSerializer):
     # Mund të shfaqësh më shumë detaje për menu_item nëse dëshiron (read-only)
-    # menu_item_details = MenuItemSerializer(source='menu_item', read_only=True) # Opsionale
+    menu_item_details = MenuItemSerializer(source='menu_item', read_only=True, required=False) # Opsionale
 
     class Meta:
         model = OrderItem
@@ -422,13 +597,14 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     # Fushat që dërgohen nga frontend-i për të krijuar porosinë
     # Backend-i do të kalkulojë totalin dhe do të marrë adresën e saktë
     delivery_address_id = serializers.PrimaryKeyRelatedField(
-        queryset=Address.objects.all(), write_only=True, source='delivery_address_street', # Burim i çuditshëm, do ta rregullojmë te create
+        queryset=Address.objects.all(), write_only=True, source='delivery_address', # Ndrysho source
         help_text="ID e adresës së zgjedhur nga përdoruesi"
     )
     # restaurant_id do të jetë në URL për krijim nga klienti, ose në payload nëse krijohet nga admini
     restaurant_id = serializers.PrimaryKeyRelatedField(
         queryset=Restaurant.objects.filter(is_active=True, is_approved=True), 
-        write_only=True, source='restaurant', required=False # Required false nëse vjen nga URL
+        write_only=True, source='restaurant', 
+        help_text="ID e restorantit nga i cili porositet" # Required false nëse vjen nga URL
     )
 
 
@@ -438,13 +614,21 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'id', 'customer', 'restaurant', 'restaurant_id', 'driver', 'items', 
             'delivery_address_id', # Për input gjatë krijimit
             'delivery_address_street', 'delivery_address_city', 'delivery_address_postal_code', 
-            'delivery_address_notes', 'order_total', 'status', 
+            'delivery_address_notes', 
+            'order_total', 'sub_total', 'delivery_fee', # SHTO sub_total, delivery_fee
+            'status', 
             'payment_method', 'payment_status', 'payment_intent_id',
-            'estimated_delivery_time', 'actual_delivery_time', 'created_at', 'updated_at'
+            'estimated_delivery_time', 'actual_delivery_time', 
+            'confirmed_at', 'preparation_started_at', 'ready_for_pickup_at', 'picked_up_by_driver_at', # SHTO kohët
+            'created_at', 'updated_at'
         )
         read_only_fields = (
-            'id', 'customer', 'restaurant', 'driver', 'order_total', 'payment_intent_id',
+            'id', 'customer', 'restaurant', 'driver', 
+            'delivery_address_street', 'delivery_address_city', 'delivery_address_postal_code',
+            'order_total', 'sub_total', 'delivery_fee', # SHTO këto
+            'payment_intent_id',
             'actual_delivery_time', 'created_at', 'updated_at',
+            'confirmed_at', 'preparation_started_at', 'ready_for_pickup_at', 'picked_up_by_driver_at' # SHTO këto
             # Statusi dhe estimated_delivery_time mund të jenë read_only për klientin, por të modifikueshme nga restoranti/admini
         )
         # 'delivery_address_street', 'city', 'postal_code' do të jenë read_only pasi të krijohen,
@@ -453,11 +637,11 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         items_data = validated_data.pop('items')
         # Adresa do të merret nga delivery_address_id
-        address_id_for_order = validated_data.pop('delivery_address_street') # Ky ishte source i delivery_address_id
-        try:
-            address_instance = Address.objects.get(id=address_id_for_order.id, user=self.context['request'].user)
-        except Address.DoesNotExist:
-            raise serializers.ValidationError("Adresa e zgjedhur nuk është valide ose nuk ju përket juve.")
+        address_instance = validated_data.pop('delivery_address') # Ky ishte source i delivery_address_id
+        
+        # Sigurohu që adresa i përket përdoruesit të kyçur
+        if address_instance.user != self.context['request'].user:
+            raise serializers.ValidationError("Adresa e zgjedhur nuk ju përket juve.")
 
         # Restoranti mund të vijë nga restaurant_id ose nga URL (nëse është nested view)
         # Për momentin, supozojmë se vjen nga restaurant_id në payload
@@ -470,23 +654,30 @@ class OrderDetailSerializer(serializers.ModelSerializer):
         # validated_data['delivery_address_country'] = address_instance.country # Nëse e ke këtë fushë te Order
 
         # Kalkulo totalin e porosisë bazuar te artikujt
-        calculated_order_total = 0
+        calculated_sub_total = 0
         for item_data in items_data:
             menu_item = item_data.get('menu_item')
             quantity = item_data.get('quantity')
             if not menu_item or not quantity or not menu_item.is_available:
                 raise serializers.ValidationError(f"Artikulli '{menu_item.name if menu_item else 'i panjohur'}' nuk është i disponueshëm ose sasia është invalide.")
-            calculated_order_total += menu_item.price * quantity
+            if menu_item.restaurant != restaurant_instance:
+                raise serializers.ValidationError(f"Artikulli '{menu_item.name}' nuk i përket restorantit të zgjedhur.")
+            calculated_sub_total += menu_item.price * quantity
         
         # Shto tarifat (nëse ka)
-        # delivery_fee = 2.00 # Shembull
-        # calculated_order_total += delivery_fee
+        delivery_fee_value = 2.00 # Shembull: tarifa e dërgesës mund të vijë nga restoranti ose të jetë fikse
         # validated_data['delivery_fee'] = delivery_fee
 
-        validated_data['order_total'] = calculated_order_total
+        validated_data['sub_total'] = calculated_sub_total
+        validated_data['delivery_fee'] = delivery_fee_value
+        validated_data['order_total'] = calculated_sub_total + delivery_fee_value
         
         # Përdoruesi që bën kërkesën është klienti
-        order = Order.objects.create(customer=self.context['request'].user, restaurant=restaurant_instance, **validated_data)
+        order = Order.objects.create(
+            customer=self.context['request'].user, 
+            restaurant=restaurant_instance, 
+            **validated_data
+        )
 
         for item_data in items_data:
             menu_item_instance = item_data.get('menu_item')
@@ -497,28 +688,50 @@ class OrderDetailSerializer(serializers.ModelSerializer):
                 item_price_at_purchase=menu_item_instance.price,
                 quantity=item_data.get('quantity')
             )
+        
+        # Pastro shportën e përdoruesit pas krijimit të porosisë
+        Cart.objects.filter(user=self.context['request'].user).delete()
+        
         return order
 
     def update(self, instance, validated_data):
-        # Zakonisht klientët nuk e modifikojnë porosinë pasi është bërë.
-        # Restoranti/Admini mund të modifikojnë statusin, shoferin, etj.
-        # Kjo kërkon logjikë më të detajuar dhe leje specifike.
-        # Për momentin, lejojmë vetëm modifikimin e statusit nga përdorues të autorizuar (restoranti/admini).
-        
-        allowed_fields_for_update = ['status', 'driver', 'estimated_delivery_time', 'actual_delivery_time', 'payment_status']
-        
-        # Heqim fushat që nuk duhet të modifikohen nga useri (klienti)
-        # Kjo duhet të forcohet edhe nga lejet.
-        if not (self.context['request'].user.is_staff or \
-                (instance.restaurant and instance.restaurant.owner == self.context['request'].user) or \
-                (instance.driver and instance.driver == self.request.user and 'status' in validated_data)): # Shoferi mund të ndryshojë vetëm statusin
-            
-            for field in list(validated_data.keys()):
-                if field not in ['delivery_address_notes']: # Klienti mund të modifikojë vetëm shënimet e dërgesës (shembull)
-                    validated_data.pop(field, None)
-        
-        # Logjika për items (OrderItem) update është më komplekse dhe zakonisht nuk bëhet direkt këtu.
-        # Mund të kesh endpoint-e të veçanta për të modifikuar artikujt e një porosie nëse lejohet.
-        validated_data.pop('items', None) # Nuk lejojmë modifikimin e items direkt këtu për momentin
+        # Lejo modifikimin vetëm të disa fushave dhe vetëm nga përdorues të autorizuar
+        request_user = self.context['request'].user
+        allowed_to_update = False
+        is_driver_updating_status = False
 
+        if request_user.is_staff: # Admin
+            allowed_to_update = True
+        elif instance.restaurant and request_user == instance.restaurant.owner: # Pronari i restorantit
+            allowed_to_update = True
+        elif instance.driver and request_user == instance.driver: # Shoferi i caktuar
+            # Shoferi mund të modifikojë vetëm statusin dhe vetëm nëse është ON_THE_WAY, DELIVERED, FAILED_DELIVERY
+            if 'status' in validated_data and validated_data['status'] in [
+                Order.OrderStatus.ON_THE_WAY, Order.OrderStatus.DELIVERED, Order.OrderStatus.FAILED_DELIVERY
+            ]:
+                allowed_to_update = True
+                is_driver_updating_status = True
+            else: # Nëse shoferi tenton të modifikojë diçka tjetër ose një status të palejuar
+                # Lejo vetëm modifikimin e statusit nga shoferi
+                non_status_fields = {k: v for k, v in validated_data.items() if k != 'status'}
+                if non_status_fields:
+                    raise serializers.ValidationError("Shoferët mund të modifikojnë vetëm statusin e dërgesës.")
+                if 'status' in validated_data: # Këtu statusi nuk është një nga ato të lejuarat
+                     raise serializers.ValidationError(f"Statusi '{validated_data['status']}' nuk lejohet të vendoset nga shoferi.")
+
+        if not allowed_to_update:
+            # Nëse nuk është asnjë nga rolet e mësipërme, ose shoferi po tenton të modifikojë fusha të palejuara
+            raise serializers.ValidationError("Nuk keni leje të modifikoni këtë porosi ose këto fusha.")
+
+        # Heq fushat që nuk duhet të modifikohen kurrë pas krijimit, ose nga role specifike
+        validated_data.pop('items', None) # Items nuk modifikohen kurrë pas krijimit
+        validated_data.pop('delivery_address_id', None) # Adresa nuk modifikohet
+        validated_data.pop('restaurant_id', None) # Restoranti nuk modifikohet
+
+        # Nëse është shofer që po modifikon statusin, lejo vetëm fushën 'status'
+        if is_driver_updating_status:
+            status_to_set = validated_data.get('status')
+            validated_data.clear() # Hiq gjithçka tjetër
+            validated_data['status'] = status_to_set
+        
         return super().update(instance, validated_data)

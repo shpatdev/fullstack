@@ -9,18 +9,19 @@ import {
     ArrowRightOnRectangleIcon, ChevronDownIcon, SparklesIcon 
 } from '@heroicons/react/24/outline'; 
 import Button from '../components/Button.jsx'; // Assuming Button is here
-import Logo from '../components/Logo.jsx'; // Changed from ../components/Logo.jsx
+// import Logo from '../components/Logo.jsx'; // Komentuar, por përdoret një Link i thjeshtë për logon
 
 const CustomerLayout = () => {
   const { user, logout, isAuthenticated } = useAuth();
-  const { cartItemCount } = useCart();
+  const { getCartItemCount } = useCart(); // !!! KJO DO TE DESHTONTE PA IMPORTIN E useCart !!! -> FIXED: Used getCartItemCount
+  const cartItemCount = getCartItemCount(); // Get the actual count
   const navigate = useNavigate();
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const profileRef = useRef(null);
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate('/auth/login'); // Ndryshuar nga /login te /auth/login per konsistence me AppRoutes
   };
 
   useEffect(() => {
@@ -48,11 +49,13 @@ const CustomerLayout = () => {
       <header className="bg-primary-600 dark:bg-slate-800 shadow-lg sticky top-0 z-50 print:hidden">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
+            {/* Logo Section */}
             <div className="flex items-center">
               <Link to="/customer/restaurants" className="flex-shrink-0 flex items-center gap-2 text-white hover:opacity-90 transition-opacity">
                 <SparklesIcon className="h-7 w-7 text-yellow-300"/>
                 <h1 className="text-2xl font-bold">Food<span className="text-yellow-300">Dash</span></h1>
               </Link>
+              {/* Navigation Links */}
               <nav className="hidden md:ml-10 md:flex md:items-baseline md:space-x-1">
                 {navLinks.map((item) => (
                   <NavLink
@@ -71,18 +74,34 @@ const CustomerLayout = () => {
                 ))}
               </nav>
             </div>
+
+            {/* Right side of the header: Cart and Profile */}
             <div className="flex items-center space-x-3">
+              {/* !!! KETU DUHET TE SHTOHET IKONA DHE LINKU I SHPORTES !!! */}
+              {/* Shembull per ikonen e shportes: */}
+                {isAuthenticated && (
+                  <Link to="/customer/cart" className="relative p-2 text-primary-100 dark:text-slate-300 hover:bg-white/10 dark:hover:bg-slate-700/70 rounded-full">
+                    <ShoppingCartIcon className="h-6 w-6" />
+                    {cartItemCount > 0 && (
+                      <span className="absolute top-0 right-0 block h-4 w-4 rounded-full ring-2 ring-primary-600 dark:ring-slate-800 bg-red-500 text-white text-xs flex items-center justify-center">
+                        {cartItemCount}
+                      </span>
+                    )}
+                  </Link>
+                )}
+              
+
               {isAuthenticated && user ? (
                 <div className="relative" ref={profileRef}>
                   <button
-                    onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                    onClick={() => setProfileDropdownOpen(!profileDropdownOpen)} // KJO DUHET TE FUNKSIONOJE
                     className="flex items-center text-sm rounded-full text-primary-100 dark:text-slate-300 hover:bg-white/10 dark:hover:bg-slate-700/70 p-2 focus:outline-none"
                   >
                     <UserCircleIcon className="h-6 w-6" />
-                    <span className="ml-2 hidden lg:inline">{user.first_name || user.email}</span>
+                    <span className="ml-2 hidden lg:inline">{user.first_name || user.email}</span> {/* Shfaq emrin ose email-in */}
                     <ChevronDownIcon className={`h-4 w-4 text-gray-400 transition-transform duration-200 ml-1 ${profileDropdownOpen ? 'rotate-180' : ''} hidden lg:inline`} />
                   </button>
-                  <Transition
+                  <Transition // Headless UI Transition per dropdown
                     as={Fragment}
                     show={profileDropdownOpen}
                     enter="transition ease-out duration-100"
@@ -97,7 +116,7 @@ const CustomerLayout = () => {
                         <NavLink
                           key={item.name}
                           to={item.href}
-                          onClick={() => setProfileDropdownOpen(false)}
+                          onClick={() => setProfileDropdownOpen(false)} // Mbyll dropdown pas klikimit
                           className={({ isActive }) =>
                             `flex items-center px-4 py-2 text-sm 
                             ${isActive ? 'bg-gray-100 dark:bg-slate-600 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-slate-200'} 
@@ -109,7 +128,7 @@ const CustomerLayout = () => {
                         </NavLink>
                       ))}
                       <button
-                        onClick={() => { handleLogout(); setProfileDropdownOpen(false); }}
+                        onClick={() => { handleLogout(); setProfileDropdownOpen(false); }} // Mbyll dropdown
                         className="w-full text-left flex items-center px-4 py-2 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-600"
                       >
                         <ArrowRightOnRectangleIcon className="h-4 w-4 mr-2 text-gray-400 dark:text-slate-500"/>
@@ -119,7 +138,7 @@ const CustomerLayout = () => {
                   </Transition>
                 </div>
               ) : (
-                <Button onClick={() => navigate('/login')} variant="light" size="sm">Kyçu</Button>
+                <Button onClick={() => navigate('/auth/login')} variant="light" size="sm">Kyçu</Button> // Ndryshuar nga /login te /auth/login
               )}
             </div>
           </div>

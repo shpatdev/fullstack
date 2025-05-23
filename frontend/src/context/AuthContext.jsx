@@ -14,24 +14,34 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [token, setTokenState] = useState(localStorage.getItem('authToken')); // Lexo tokenin nga localStorage
 
+  // currentRestaurant and agent state, not directly related to the loop but part of context
+  const [currentRestaurant, setCurrentRestaurant] = useState(() => {
+    const saved = localStorage.getItem('currentRestaurant');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [agent, setAgent] = useState(() => {
+    const saved = localStorage.getItem('agentProfile');
+    return saved ? JSON.parse(saved) : null;
+  });
+
   const setAuthToken = useCallback((newToken) => {
     if (newToken) {
       localStorage.setItem('authToken', newToken);
-      apiService.setToken(newToken); // Vendos tokenin për kërkesat e ardhshme të apiService
+      apiService.setToken(newToken);
     } else {
       localStorage.removeItem('authToken');
-      apiService.clearToken(); // Pastro tokenin nga apiService
+      apiService.clearToken();
     }
     setTokenState(newToken);
-  }, []);
+  }, [setTokenState]); // setTokenState is stable
 
   const processUserRoleData = useCallback((userData) => {
-    setUser(userData);
+    setUser(userData); // setUser is stable
     if (userData?.role === 'RESTAURANT_OWNER') {
       if (userData.ownsRestaurants && userData.ownsRestaurants.length > 0) {
-         const mockRestaurant = userData.ownsRestaurants[0];
-         setCurrentRestaurant(mockRestaurant);
-         localStorage.setItem('currentRestaurant', JSON.stringify(mockRestaurant));
+         const restaurantToSet = userData.ownsRestaurants[0];
+         setCurrentRestaurant(restaurantToSet); // setCurrentRestaurant is stable
+         localStorage.setItem('currentRestaurant', JSON.stringify(restaurantToSet));
       } else {
         setCurrentRestaurant(null);
         localStorage.removeItem('currentRestaurant');
@@ -41,59 +51,63 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem('currentRestaurant');
     }
 
-    if (userData?.role === 'DRIVER' || userData?.role === 'DELIVERY_PERSONNEL') { // Added DELIVERY_PERSONNEL
-        const driverProfile = userData.driverProfile || { id: userData.id, isOnline: false, name: userData.name || userData.username };
-        setAgent(driverProfile);
-        localStorage.setItem('agentProfile', JSON.stringify(driverProfile));
+    if (userData?.role === 'DRIVER' || userData?.role === 'DELIVERY_PERSONNEL') {
+        const driverProfileToSet = userData.driverProfile || { id: userData.id, isOnline: false, name: userData.name || userData.username };
+        setAgent(driverProfileToSet); // setAgent is stable
+        localStorage.setItem('agentProfile', JSON.stringify(driverProfileToSet));
     } else {
         setAgent(null);
         localStorage.removeItem('agentProfile');
     }
-  }, []);
+  }, [setCurrentRestaurant, setAgent]); // setUser is part of processUserRoleData's first line.
 
   const fetchAndSetUser = useCallback(async (currentToken) => {
+    console.log("AuthContext: fetchAndSetUser called with token:", currentToken ? "present" : "absent");
     if (!currentToken) {
-      setUser(null);
+      processUserRoleData(null); // Clear user data
       setIsAuthenticated(false);
       setIsLoading(false);
       return null;
     }
-    
+
     setIsLoading(true);
     setError(null);
     try {
-      apiService.setToken(currentToken); // Sigurohu që tokeni është vendosur para kërkesës
+      // Ensure apiService has the correct token if called independently.
+      // Corrected the method name from getToken to getAuthToken
+      if (apiService.getAuthToken() !== currentToken) { 
+          apiService.setToken(currentToken);
+      }
+
       const userData = await authApi.fetchMe();
-      setUser(userData);
+      processUserRoleData(userData);
       setIsAuthenticated(true);
-      setError(null); // Pastro gabimet e mëparshme në sukses
-      return userData; // Kthe userData për përdorim të menjëhershëm (p.sh. në login)
+      setError(null);
+      return userData;
     } catch (err) {
-      console.error("AuthContext: Gabim gjatë marrjes së të dhënave të përdoruesit:", err);
-      setAuthToken(null); // Token i pavlefshëm, pastroje
-      setUser(null);
+      console.error("AuthContext: Error during fetchAndSetUser:", err);
+      setAuthToken(null);
+      processUserRoleData(null);
       setIsAuthenticated(false);
-      // Mos e vendos 'err' këtu direkt nëse nuk është specifikisht për fetchAndSetUser
-      // Lëre funksionin thirrës (p.sh. login) ta trajtojë gabimin e tij.
-      // Por nëse ky dështon gjatë ngarkimit fillestar, mund të jetë e nevojshme.
-      // Për momentin, e lëmë kështu, login do të vendosë errorin e vet.
-      throw err; // Rijep gabimin që funksioni thirrës ta kapë
+      throw err;
     } finally {
       setIsLoading(false);
     }
-  }, [setAuthToken]);
+  }, [setAuthToken, processUserRoleData, setIsAuthenticated, setIsLoading, setError]);
 
   useEffect(() => {
     const initialToken = localStorage.getItem('authToken');
+    console.log("AuthContext - initial token check effect. Initial token:", initialToken ? "present" : "absent");
     if (initialToken) {
-      fetchAndSetUser(initialToken).catch(() => {
-        // Nëse fetchAndSetUser dështon gjatë ngarkimit fillestar (p.sh. token i skaduar)
-        // tokeni do të pastrohet nga localStorage brenda fetchAndSetUser
-        // Dhe gjendja do të jetë user: null, isAuthenticated: false
-        console.log("AuthContext: Tokeni fillestar ishte i pavlefshëm ose ka skaduar.");
+      // No need to call apiService.setToken() here if fetchAndSetUser does it,
+      // or if apiService.request always gets token from localStorage.
+      // The primary purpose here is to trigger user fetching if a token exists.
+      fetchAndSetUser(initialToken).catch(err => {
+        console.error("AuthContext: Error during initial fetchAndSetUser from useEffect:", err);
+        // Error handling is inside fetchAndSetUser, including clearing token if invalid
       });
     } else {
-      setIsLoading(false); // Nuk ka token, ndalo ngarkimin
+      setIsLoading(false);
     }
   }, [fetchAndSetUser]);
 
@@ -101,53 +115,46 @@ export const AuthProvider = ({ children }) => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await authApi.login(credentials); // credentials = {email, password}
-      if (response && response.access) {
-        setAuthToken(response.access); // Ruaj tokenin dhe vendose në apiService
-        const userData = await fetchAndSetUser(response.access); // Merr të dhënat e userit
-        return userData; // Kthe userData për navigim etj.
+      const data = await authApi.login(credentials);
+      if (data && data.access) {
+        setAuthToken(data.access);
+        const userData = await fetchAndSetUser(data.access);
+        return userData; // Return user data
       } else {
-        // Kjo nuk duhet të ndodhë nëse API kthen error për kredenciale të gabuara
-        // Por si fallback:
-        throw new Error(response?.detail || "Përgjigje e papritur nga serveri gjatë kyçjes.");
+        throw new Error(data.detail || "Login failed: No access token received.");
       }
     } catch (err) {
-      console.error("AuthContext: Gabim gjatë kyçjes:", err);
-      const errorMessage = err.response?.data?.detail || err.message || "Email-i ose fjalëkalimi është i pasaktë.";
-      setError(errorMessage); // Vendos mesazhin e gabimit
-      setAuthToken(null); // Sigurohu që tokeni është pastruar
-      setUser(null);
+      console.error("AuthContext: Login error", err);
+      const errorMessage = err.response?.data?.detail || err.message || "Gabim gjatë kyçjes.";
+      setError(errorMessage);
+      // Ensure auth state is cleared on login failure
+      setAuthToken(null);
+      processUserRoleData(null); // Use processUserRoleData to clear user related states
       setIsAuthenticated(false);
-      throw new Error(errorMessage); // Rijep gabimin që komponenti Login ta kapë dhe ta shfaqë
+      throw new Error(errorMessage); // Re-throw for the component to handle
     } finally {
       setIsLoading(false);
     }
   };
-  
+
   const adminLogin = async (credentials) => {
     setIsLoading(true);
     setError(null);
     try {
-      // Supozojmë se authApi.adminLogin është konfiguruar ose përdorim authApi.login
-      const response = await authApi.adminLogin(credentials); // Ose authApi.login
-      if (response && response.access) {
-        setAuthToken(response.access);
-        const userData = await fetchAndSetUser(response.access);
-        // Mund të shtosh logjikë specifike për admin këtu nëse nevojitet
-        if (userData.role !== 'ADMIN') {
-            await logout(); // Bëj logout nëse useri nuk është admin
-            throw new Error("Kyçja e administratorit dështoi: Përdoruesi nuk është administrator.");
-        }
-        return userData;
+      const data = await authApi.adminLogin(credentials);
+      if (data && data.access) {
+        setAuthToken(data.access);
+        const userData = await fetchAndSetUser(data.access);
+        return userData; // Return user data
       } else {
-        throw new Error(response?.detail || "Përgjigje e papritur nga serveri gjatë kyçjes së administratorit.");
+        throw new Error(data.detail || "Admin login failed: No access token received.");
       }
     } catch (err) {
-      console.error("AuthContext: Gabim gjatë kyçjes së administratorit:", err);
-      const errorMessage = err.response?.data?.detail || err.message || "Kredencialet e administratorit janë të pasakta.";
+      console.error("AuthContext: Admin Login error", err);
+      const errorMessage = err.response?.data?.detail || err.message || "Gabim gjatë kyçjes së administratorit.";
       setError(errorMessage);
       setAuthToken(null);
-      setUser(null);
+      processUserRoleData(null); // Use processUserRoleData to clear user related states
       setIsAuthenticated(false);
       throw new Error(errorMessage);
     } finally {
@@ -155,70 +162,66 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Define an internal logout function for use within register's catch
+  const internalLogout = useCallback(async () => {
+    setAuthToken(null);
+    processUserRoleData(null);
+    setIsAuthenticated(false);
+    setError(null);
+    localStorage.removeItem('currentRestaurant');
+    localStorage.removeItem('agentProfile');
+  }, [setAuthToken, processUserRoleData, setIsAuthenticated, setError]);
+
 
   const register = async (userData) => {
     setIsLoading(true);
     setError(null);
     try {
       const registeredUserData = await authApi.register(userData);
-      // Disa API-ë të regjistrimit kthejnë tokena direkt, disa kërkojnë login të veçantë.
-      // Supozojmë se API-ja jote nuk kthen tokena direkt pas regjistrimit,
-      // por vetëm një mesazh suksesi. Përdoruesi duhet të bëjë login pas regjistrimit.
       if (registeredUserData.access && registeredUserData.refresh) {
-        // Nëse API kthen tokena, trajtoji si te login
-        localStorage.setItem('accessToken', registeredUserData.access);
-        localStorage.setItem('refreshToken', registeredUserData.refresh);
-        setToken(registeredUserData.access);
-        setRefreshTokenState(registeredUserData.refresh);
+        setAuthToken(registeredUserData.access); // Use setAuthToken
+        // setRefreshTokenState(registeredUserData.refresh); // Assuming you have a refreshTokenState
         await fetchAndSetUser(registeredUserData.access);
       } else {
-        // Nëse API nuk kthen tokena, thjesht trego sukses dhe përdoruesi duhet të bëjë login
-        setIsAuthenticated(false); // Nuk është i kyçur automatikisht
+        setIsAuthenticated(false);
       }
-      return registeredUserData; // Kthe të dhënat e regjistrimit (p.sh., mesazhin)
+      return registeredUserData;
     } catch (error) {
-      await logout(); // Pastro gjithçka nëse regjistrimi dështon // Bëje await
+      await internalLogout(); // Call the internal, useCallback-wrapped logout
       console.error("AuthContext: Registration failed", error);
-      throw error; // Rihidhe gabimin që Register.jsx ta kapë
+      const errorMessage = error.response?.data?.detail || error.message || "Gabim gjatë regjistrimit.";
+      setError(errorMessage); // Set error state
+      throw error;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const logout = useCallback(async () => {
-    // Mund të shtosh një thirrje API për të invaliduar tokenin në backend nëse e ke
-    // await authApi.logout(); 
-    setAuthToken(null); // Pastron tokenin nga localStorage dhe apiService
-    setUser(null);
-    setIsAuthenticated(false);
-    setError(null);
-    
-    // Pastro çdo të dhënë tjetër të ruajtur në localStorage nga AuthContext
-    localStorage.removeItem('currentRestaurant');
-    localStorage.removeItem('agentProfile');
-    // Nëse ke mockUserId për shportën e mysafirit dhe dëshiron ta pastrosh në logout (opsionale)
-    // localStorage.removeItem('mockUserId'); 
-
-    // Nuk ka nevojë për setIsLoading këtu zakonisht, por varet nga UI
-  }, [setAuthToken]);
+  const logoutUser = useCallback(() => {
+    console.log("AuthContext: logoutUser called");
+    internalLogout(); // Use the internal logout logic
+  }, [internalLogout]);
 
   const clearAuthError = useCallback(() => {
     setError(null);
-  }, []);
+  }, [setError]);
 
   const value = {
     user,
     isAuthenticated,
     isLoading,
     error,
-    token, // Ekspozon tokenin nëse nevojitet diku tjetër (me kujdes)
+    token,
     login,
-    adminLogin, // Shto adminLogin
+    adminLogin,
     register,
-    logout,
-    fetchAndSetUser, // Mund të jetë e dobishme për rifreskim manual të userit
-    setError, // Jep mundësinë për të vendosur gabime nga jashtë (p.sh. ProfilePage)
-    clearAuthError, // Jep mundësinë për të pastruar gabimet
+    logout: logoutUser, // Expose logoutUser as 'logout'
+    fetchAndSetUser, // Expose if needed for manual refresh, though typically handled internally
+    setAuthToken, // Expose if external parts need to set token (e.g. OAuth callback)
+    setError, // Allow components to set auth-related errors if necessary
+    clearAuthError, // Allow components to clear auth errors
+    currentRestaurant, // expose currentRestaurant
+    agent, // expose agent
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

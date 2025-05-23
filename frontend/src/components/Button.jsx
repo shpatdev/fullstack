@@ -37,6 +37,8 @@ const Button = ({
     isLoading = false,
     iconLeft: IconLeft, // Expect a component
     iconRight: IconRight, // Expect a component
+    iconLeftClassName = "w-4 h-4", // Default icon class
+    iconRightClassName = "w-4 h-4", // Default icon class
     fullWidth = false,
     // ... any other props you might have
 }) => {
@@ -57,9 +59,9 @@ const Button = ({
             `}
         >
             {isLoading && <Loader2 className={`w-4 h-4 animate-spin ${children ? 'mr-2' : ''}`} />}
-            {IconLeft && !isLoading && <IconLeft className={`w-4 h-4 ${children ? 'mr-2' : ''}`} />}
+            {IconLeft && !isLoading && <IconLeft className={`${iconLeftClassName} ${children ? 'mr-2' : ''}`} />}
             {children}
-            {IconRight && !isLoading && <IconRight className={`w-4 h-4 ${children ? 'ml-2' : ''}`} />}
+            {IconRight && !isLoading && <IconRight className={`${iconRightClassName} ${children ? 'ml-2' : ''}`} />}
         </button>
     );
 };

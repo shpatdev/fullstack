@@ -2,44 +2,59 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../../../context/CartContext.jsx';
-import Button from '../../../components/Button.jsx';
-import { ShoppingCartIcon, TrashIcon, PlusCircleIcon, BuildingStorefrontIcon, MinusCircleIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
-import { customerApi } from '../../../api/customerApi.js'; // For fetching restaurant details if needed
 import { useAuth } from '../../../context/AuthContext.jsx';
+import Button from '../../../components/Button.jsx';
+import { ShoppingCartIcon, TrashIcon, BuildingStorefrontIcon, InformationCircleIcon, MinusCircleIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
+import { customerApi } from '../../../api/customerApi.js'; // For fetching restaurant details
 
 const CartPage = () => {
-  const { 
-    cart, 
-    removeItemFromCart, 
-    updateItemQuantity, 
-    clearCart, 
-    getCartTotal, 
-    getRestaurantIdFromCart 
+  const {
+    cart, // cart is an object: { items: [], total_amount: ..., ... }
+    removeCartItem, // Correct name from context
+    updateCartItemQuantity, // Correct name from context
+    clearCart,
+    getCartTotalAmount, // Correct name from context
+    getRestaurantIdFromCart,
+    fetchCart, // Added to potentially re-fetch cart if needed
   } = useCart();
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const [restaurantDetails, setRestaurantDetails] = useState(null);
+  const [isLoadingRestaurant, setIsLoadingRestaurant] = useState(false);
+  
   const cartRestaurantId = getRestaurantIdFromCart();
 
   useEffect(() => {
-    if (cartRestaurantId) {
-      customerApi.fetchRestaurantDetails(cartRestaurantId)
-        .then(data => setRestaurantDetails(data))
-        .catch(err => console.error("Failed to fetch restaurant details for cart:", err));
-    } else {
-      setRestaurantDetails(null);
-    }
+    const fetchRestaurantName = async () => {
+      if (cartRestaurantId) {
+        setIsLoadingRestaurant(true);
+        try {
+          const details = await customerApi.fetchRestaurantById(cartRestaurantId);
+          setRestaurantDetails(details);
+        } catch (error) {
+          console.error("CartPage: Failed to fetch restaurant details for cart:", error);
+          // Potentially show a notification to the user
+        } finally {
+          setIsLoadingRestaurant(false);
+        }
+      } else {
+        setRestaurantDetails(null);
+      }
+    };
+
+    fetchRestaurantName();
   }, [cartRestaurantId]);
 
   const handleCheckout = () => {
     if (!isAuthenticated) {
-        navigate('/login', { state: { from: { pathname: '/customer/checkout' } } });
+      navigate('/auth/login', { state: { from: { pathname: '/customer/checkout' } } });
     } else {
-        navigate('/customer/checkout');
+      navigate('/customer/checkout');
     }
   };
 
-  if (cart.length === 0) {
+  // Main change here: check cart.items
+  if (!cart || !cart.items || cart.items.length === 0) {
     return (
       <div className="container mx-auto py-8 text-center">
         <ShoppingCartIcon className="h-24 w-24 text-gray-300 dark:text-slate-600 mx-auto mb-6" />
@@ -59,12 +74,19 @@ const CartPage = () => {
         <div className="lg:w-2/3">
           <div className="flex justify-between items-center mb-4 sm:mb-6">
             <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white">Shporta Juaj</h1>
-            {cart.length > 0 && (
+            {/* Also here, check cart.items.length */}
+            {cart.items && cart.items.length > 0 && (
               <Button onClick={clearCart} variant="outline" size="sm" iconLeft={TrashIcon} className="text-red-500 border-red-500 hover:bg-red-50 dark:text-red-400 dark:border-red-400 dark:hover:bg-red-500/10">
                 Pastro Shportën
               </Button>
             )}
           </div>
+
+          {isLoadingRestaurant && (
+            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-800/30 rounded-lg border border-blue-200 dark:border-blue-700 text-center">
+              <p className="text-sm text-blue-700 dark:text-blue-300">Duke ngarkuar detajet e restorantit...</p>
+            </div>
+          )}
 
           {restaurantDetails && (
             <div className="mb-4 p-3 bg-primary-50 dark:bg-primary-800/30 rounded-lg border border-primary-200 dark:border-primary-700">
@@ -77,20 +99,24 @@ const CartPage = () => {
           )}
 
           <div className="space-y-4">
-            {cart.map(item => (
+            {/* AND HERE: use cart.items.map */}
+            {cart.items.map(item => (
+              // item here is an object from cart.items array
+              // It should have: id (of CartItem), quantity, menu_item (ID of MenuItem),
+              // and menu_item_details (the full MenuItemSerializer object)
               <div key={item.id} className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md flex flex-col sm:flex-row items-start sm:items-center gap-4">
                 <img 
-                  src={item.image_url || '/placeholder-food-item.jpg'} 
-                  alt={item.name} 
+                  src={item.menu_item_details?.image || `https://placehold.co/100x100/eee/ccc?text=${item.menu_item_details?.name?.[0] || 'P'}`} 
+                  alt={item.menu_item_details?.name || 'Artikull'} 
                   className="w-24 h-24 sm:w-20 sm:h-20 object-cover rounded-md flex-shrink-0"
                 />
                 <div className="flex-grow">
-                  <h3 className="text-md sm:text-lg font-medium text-gray-800 dark:text-slate-100">{item.name}</h3>
-                  <p className="text-sm text-gray-500 dark:text-slate-400">Çmimi: {parseFloat(item.price).toFixed(2)} €</p>
+                  <h3 className="text-md sm:text-lg font-medium text-gray-800 dark:text-slate-100">{item.menu_item_details?.name || 'Artikull i Panjohur'}</h3>
+                  <p className="text-sm text-gray-500 dark:text-slate-400">Çmimi: {parseFloat(item.menu_item_details?.price || 0).toFixed(2)} €</p>
                 </div>
                 <div className="flex items-center space-x-2 sm:space-x-3 my-2 sm:my-0 flex-shrink-0">
                   <Button 
-                    onClick={() => updateItemQuantity(item.id, item.quantity - 1)} 
+                    onClick={() => updateCartItemQuantity(item.id, item.quantity - 1)} 
                     disabled={item.quantity <= 1}
                     variant="ghost" 
                     size="icon" 
@@ -101,7 +127,7 @@ const CartPage = () => {
                   </Button>
                   <span className="text-md font-medium text-gray-700 dark:text-slate-200 w-8 text-center">{item.quantity}</span>
                   <Button 
-                    onClick={() => updateItemQuantity(item.id, item.quantity + 1)} 
+                    onClick={() => updateCartItemQuantity(item.id, item.quantity + 1)} 
                     variant="ghost" 
                     size="icon" 
                     aria-label="Shto sasinë"
@@ -111,10 +137,11 @@ const CartPage = () => {
                   </Button>
                 </div>
                 <p className="text-md sm:text-lg font-semibold text-gray-800 dark:text-slate-100 w-full sm:w-auto text-right sm:text-left">
-                  {(parseFloat(item.price) * item.quantity).toFixed(2)} €
+                  {/* Subtotal for this item is calculated from menu_item_details.price */}
+                  {(parseFloat(item.menu_item_details?.price || 0) * item.quantity).toFixed(2)} €
                 </p>
                 <Button 
-                  onClick={() => removeItemFromCart(item.id)} 
+                  onClick={() => removeCartItem(item.id)} // Note: item.id here is the ID of CartItem
                   variant="ghost" 
                   size="icon" 
                   aria-label="Hiqe artikullin"
@@ -129,25 +156,26 @@ const CartPage = () => {
 
         {/* Order Summary Section */}
         <div className="lg:w-1/3">
-          <div className="bg-white dark:bg-slate-800 p-5 sm:p-6 rounded-lg shadow-lg sticky top-24"> {/* sticky top to account for header */}
+          <div className="bg-white dark:bg-slate-800 p-5 sm:p-6 rounded-lg shadow-lg sticky top-24">
             <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4 border-b pb-3 dark:border-slate-700">Përmbledhja e Porosisë</h2>
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-gray-600 dark:text-slate-300">
                 <span>Nëntotali:</span>
-                <span>{getCartTotal().toFixed(2)} €</span>
+                {/* Use getCartTotalAmount() directly */}
+                <span>{getCartTotalAmount().toFixed(2)} €</span>
               </div>
               <div className="flex justify-between text-gray-600 dark:text-slate-300">
                 <span>Tarifa e Dërgesës:</span>
-                <span>{(restaurantDetails?.delivery_fee || 0).toFixed(2)} €</span> {/* Placeholder, calculate properly */}
+                {/* This should come from restaurantDetails */}
+                <span>{(restaurantDetails?.delivery_fee_placeholder || restaurantDetails?.delivery_fee || 0.00).toFixed(2)} €</span>
               </div>
-              {/* Add discounts or other fees here if applicable */}
             </div>
             <div className="flex justify-between text-xl font-bold text-gray-800 dark:text-white pt-3 border-t dark:border-slate-700">
               <span>Totali:</span>
-              <span>{(getCartTotal() + (restaurantDetails?.delivery_fee || 0)).toFixed(2)} €</span>
+              <span>{(getCartTotalAmount() + (restaurantDetails?.delivery_fee_placeholder || restaurantDetails?.delivery_fee || 0.00)).toFixed(2)} €</span>
             </div>
-            <Button onClick={handleCheckout} fullWidth size="lg" className="mt-6">
-              Vazhdo te Pagesa
+            <Button onClick={handleCheckout} fullWidth size="lg" className="mt-6" disabled={isLoadingRestaurant}>
+              {isLoadingRestaurant ? 'Duke pritur detajet...' : 'Vazhdo te Pagesa'}
             </Button>
             <Link to="/customer/restaurants" className="block text-center mt-4 text-sm text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300">
               Vazhdo Blerjen

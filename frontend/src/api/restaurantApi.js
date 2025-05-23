@@ -2,7 +2,7 @@
 import { apiService } from './apiService.js';
 
 export const restaurantApi = {
-  fetchRestaurantDetails: async (restaurantId) => {
+  fetchRestaurantDetails: async (restaurantId) => { // Kjo duhet të jetë ID e restorantit nga context/url
     return apiService.request(`/restaurants/${restaurantId}/`);
   },
 
@@ -86,10 +86,21 @@ export const restaurantApi = {
     return { success: !results.some(r => r.error), message: "Orari u procesua." }; // Përgjigje e përgjithshme
   },
 
-  fetchRestaurantOrders: async (restaurantId) => {
+  fetchRestaurantOrders: async (restaurantId, tokenProvided) => { // Tokeni tani merret nga apiService brenda, por mund ta kalosh
+    if (!restaurantId) {
+        console.error("restaurantApi.fetchRestaurantOrders: restaurantId is required.");
+        return Promise.reject(new Error("Restaurant ID is required to fetch orders."));
+    }
+    // Backend OrderViewSet.get_queryset() do të filtrojë bazuar në pronarin e kyçur,
+    // OSE nëse frontend-i dërgon ?restaurant_id=X, ai do të përdoret nga admini.
+    // Për pronarin, ?restaurant_id=X do të sigurojë që ai po kërkon vetëm për restorantin e tij.
     return apiService.request(`/orders/?restaurant_id=${restaurantId}`); 
+    // NESE `get_queryset` te OrderViewSet mbështetet vetëm te `restaurant__owner=user` për pronarët,
+    // atehere `?restaurant_id=${restaurantId}` është redundant por nuk bën dëm,
+    // madje e bën më eksplicite për adminin.
   },
-  updateOrderStatus: async (orderId, newStatus) => {
+  updateOrderStatus: async (orderId, newStatus, tokenProvided) => { // tokenProvided është opsional, apiService e menaxhon
+    // Përdor action-in specifik te OrderViewSet për restorantin
     return apiService.request(`/orders/${orderId}/update-status-restaurant/`, {
       method: 'PATCH', 
       body: JSON.stringify({ status: newStatus }) 
@@ -168,7 +179,10 @@ export const restaurantApi = {
   fetchReviewsForRestaurant: async (restaurantId) => {
     return apiService.request(`/restaurants/${restaurantId}/reviews/`); 
   },
-  submitReviewReply: async (reviewId, replyText, restaurantId) => {
+  submitReviewReply: async (reviewId, replyText, restaurantId) => { // Kjo duhet të jetë replyToReview
+    // Korrigjo emrin e funksionit nëse është e nevojshme, p.sh. në:
+    // replyToReview: async (restaurantId, reviewId, replyText) => { ... }
+    // Ose endpointi të jetë /restaurants/{restaurantId}/reviews/{reviewId}/reply/
     return apiService.request(`/restaurants/${restaurantId}/reviews/${reviewId}/reply/`, {
         method: 'POST',
         body: JSON.stringify({ text: replyText })

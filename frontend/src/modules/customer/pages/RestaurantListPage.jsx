@@ -3,18 +3,26 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { customerApi } from '../../../api/customerApi'; 
 import RestaurantCard from '../components/RestaurantCard'; 
 import Button from '../../../components/Button'; 
-import { MagnifyingGlassIcon, XCircleIcon, FaceFrownIcon } from '@heroicons/react/24/outline'; // Import specific icons
+import { MagnifyingGlassIcon, XCircleIcon, FaceFrownIcon } from '@heroicons/react/24/outline';
+import { useNotification } from '../../../context/NotificationContext.jsx';
 
 const RestaurantListPage = () => {
   const [restaurants, setRestaurants] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeFilters, setActiveFilters] = useState({ category: '', rating: 0 });
   const [allCategories, setAllCategories] = useState([]);
-  const [visibleCount, setVisibleCount] = useState(8);
+  const [activeFilters, setActiveFilters] = useState({ category: '', rating: 0 });
+  const [visibleCount, setVisibleCount] = useState(12); // Initial number of restaurants to show
+  const { showSuccess, showError } = useNotification(); // Assuming you might use notifications
 
-  const fetchData = useCallback(async () => {
+  useEffect(() => {
+    console.log("RestaurantListPage - Restaurants:", restaurants);
+    console.log("RestaurantListPage - IsLoading:", isLoading);
+    console.log("RestaurantListPage - Error:", error);
+  }, [restaurants, isLoading, error]);
+
+  const fetchRestaurantsAndCategories = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -30,7 +38,7 @@ const RestaurantListPage = () => {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchRestaurantsAndCategories(); }, [fetchRestaurantsAndCategories]);
 
   const handleSearchChange = (e) => setSearchTerm(e.target.value);
   const handleFilterChange = (filterName, value) => {

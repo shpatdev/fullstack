@@ -10,40 +10,57 @@ import RestaurantFormModal from '../components/RestaurantFormModal';
 import ConfirmationModal from '../../../components/ConfirmationModal';
 
 const ManageRestaurantsPage = () => {
-  const { user } = useAuth();
+  const [restaurants, setRestaurants] = useState([]);
+  const [allGlobalCategories, setAllGlobalCategories] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const { user } = useAuth(); // Assuming user token is needed for adminApi calls implicitly via apiService
   const { showSuccess, showError } = useNotification();
 
-  const [restaurants, setRestaurants] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRestaurant, setEditingRestaurant] = useState(null);
   
-  const [confirmActionProps, setConfirmActionProps] = useState({
-      isOpen: false,
-      title: '',
-      message: '',
-      onConfirm: () => {},
-      confirmText: 'Konfirmo',
-      iconType: 'warning'
+  const [confirmActionProps, setConfirmActionProps] = useState({ isOpen: false });
+
+  const [filters, setFilters] = useState({
+    activity: 'ALL', // 'ALL', 'ACTIVE', 'INACTIVE'
+    approval: 'ALL', // 'ALL', 'APPROVED', 'PENDING'
+    searchTerm: '',
   });
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({ activity: 'ALL', approval: 'ALL', category: 'ALL' });
-  const [allGlobalCategories, setAllGlobalCategories] = useState([]); // For filter dropdown
-
-
   const fetchRestaurantsAndCategories = useCallback(async () => {
-    if (!user?.token) return;
     setIsLoading(true);
     setError(null);
     try {
+      // Pass filters to API call if backend supports it
+      // Example: const restaurantsData = await adminApi.fetchAllRestaurants({ 
+      //   is_active: filters.activity === 'ACTIVE' ? true : filters.activity === 'INACTIVE' ? false : undefined,
+      //   is_approved: filters.approval === 'APPROVED' ? true : filters.approval === 'PENDING' ? false : undefined,
+      //   search: filters.searchTerm
+      // });
       const [restaurantsData, categoriesData] = await Promise.all([
-        adminApi.fetchAllRestaurants(user.token),
-        adminApi.fetchAllRestaurantCategories(user.token) // Global categories for filter
+        adminApi.fetchAllRestaurants(), // Modify to pass filters if backend supports
+        adminApi.fetchAllRestaurantCategories()
       ]);
-      setRestaurants(restaurantsData || []);
+      
+      // Apply filtering on frontend if backend doesn't support it (less efficient for large datasets)
+      let filteredRestaurants = restaurantsData || [];
+      if (filters.activity !== 'ALL') {
+        filteredRestaurants = filteredRestaurants.filter(r => r.is_active === (filters.activity === 'ACTIVE'));
+      }
+      if (filters.approval !== 'ALL') {
+        filteredRestaurants = filteredRestaurants.filter(r => r.is_approved === (filters.approval === 'APPROVED'));
+      }
+      if (filters.searchTerm) {
+        const lowerSearchTerm = filters.searchTerm.toLowerCase();
+        filteredRestaurants = filteredRestaurants.filter(r => 
+            r.name.toLowerCase().includes(lowerSearchTerm) ||
+            (r.owner_details?.username && r.owner_details.username.toLowerCase().includes(lowerSearchTerm)) ||
+            r.address.toLowerCase().includes(lowerSearchTerm)
+        );
+      }
+
+      setRestaurants(filteredRestaurants);
       setAllGlobalCategories(categoriesData || []);
     } catch (err) {
       console.error("Failed to fetch restaurants or categories:", err);
@@ -53,7 +70,7 @@ const ManageRestaurantsPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [user?.token, showError]);
+  }, [user?.token, showError, filters]);
 
   useEffect(() => {
     fetchRestaurantsAndCategories();
@@ -72,86 +89,79 @@ const ManageRestaurantsPage = () => {
   const handleSaveRestaurant = (savedRestaurant) => {
     // Instead of optimistic update, re-fetch for consistency, 
     // especially since mock API might not return perfectly nested objects.
-    fetchRestaurantsAndCategories();
+    fetchRestaurantsAndCategories(); // This will re-apply filters
+    handleCloseModal();
   };
+
+  const handleToggleRestaurantActive = async (restaurantId, currentIsActive) => {
+    openConfirmation(
+        `Ndrysho Statusin e Aktivitetit`,
+        `Jeni të sigurt që doni të ${currentIsActive ? 'çaktivizoni' : 'aktivizoni'} këtë restorant?`,
+        async () => {
+            try {
+                setIsLoading(true); // Consider a more specific loading state
+                await adminApi.toggleRestaurantActiveStatus(restaurantId, !currentIsActive);
+                showSuccess(`Restoranti u ${!currentIsActive ? 'aktivizua' : 'çaktivizua'} me sukses.`);
+                fetchRestaurantsAndCategories();
+            } catch (err) {
+                showError(err.message || "Gabim gjatë ndryshimit të statusit të aktivitetit.");
+            } finally {
+                setIsLoading(false);
+                setConfirmActionProps({ isOpen: false });
+            }
+        },
+        currentIsActive ? "Çaktivizo" : "Aktivizo",
+        'warning'
+    );
+  };
+
+  const handleApproveRestaurant = async (restaurantId) => {
+     openConfirmation(
+        `Mirato Restorantin`,
+        `Jeni të sigurt që doni të miratoni këtë restorant? Ky veprim nuk mund të kthehet.`,
+        async () => {
+            try {
+                setIsLoading(true); // Consider a more specific loading state
+                await adminApi.approveRestaurant(restaurantId);
+                showSuccess("Restoranti u miratua me sukses.");
+                fetchRestaurantsAndCategories();
+            } catch (err) {
+                showError(err.message || "Gabim gjatë miratimit të restorantit.");
+            } finally {
+                setIsLoading(false);
+                setConfirmActionProps({ isOpen: false });
+            }
+        },
+        "Mirato",
+        'success'
+    );
+  };
+
 
   const openConfirmation = (title, message, onConfirmCallback, confirmText = "Konfirmo", iconType = 'warning') => {
     setConfirmActionProps({
         isOpen: true,
         title,
         message,
-        onConfirm: () => {
-            onConfirmCallback();
-            setConfirmActionProps(prev => ({ ...prev, isOpen: false }));
+        onConfirm: async () => { // Make onConfirm async to handle loading states within it
+            await onConfirmCallback();
+            // No need to setConfirmActionProps({ isOpen: false }) here, callback should handle it or it's handled in finally
         },
+        onClose: () => setConfirmActionProps({ isOpen: false }),
         confirmText,
         iconType
     });
   };
 
-
-  const handleDelete = async (restaurantId) => {
-     try {
-        setIsLoading(true);
-        // await adminApi.deleteRestaurant(restaurantId, user.token); // TODO: Implement delete in API
-        await new Promise(resolve => setTimeout(resolve, 500)); // Mock
-        setRestaurants(prev => prev.filter(r => r.id !== restaurantId));
-        showSuccess(`Restoranti (ID: ${restaurantId}) u fshi (mock).`);
-    } catch (err) { showError(err.message || `Gabim gjatë fshirjes.`); }
-    finally { setIsLoading(false); }
+  const handleSearchChange = (e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }));
+  const handleFilterChange = (filterName, value) => {
+    setFilters(prev => ({ ...prev, [filterName]: value }));
+    // Optionally, debounce fetchRestaurantsAndCategories or call it on a search button click
   };
 
-  const handleToggleField = async (restaurantId, field, currentValue) => {
-    try {
-        setIsLoading(true);
-        const updatedRestaurant = await adminApi.updateRestaurant(
-            restaurantId, 
-            { [field]: !currentValue }, 
-            user.token
-        );
-        setRestaurants(prev => prev.map(r => r.id === updatedRestaurant.id ? updatedRestaurant : r));
-        showSuccess(`Statusi "${field.replace('is_', '')}" i restorantit u ndryshua.`);
-    } catch (err) { showError(err.message || `Gabim gjatë ndryshimit të statusit.`); }
-    finally { setIsLoading(false); }
-  };
-
-
-  const handleSearchChange = (e) => setSearchTerm(e.target.value);
-  const handleFilterChange = (e) => {
-    const { name, value } = e.target;
-    setFilters(prev => ({ ...prev, [name]: value }));
-  };
-
-  const filteredRestaurants = restaurants.filter(restaurant => {
-    const searchTermLower = searchTerm.toLowerCase();
-    let matchesSearch = true;
-    if (searchTerm) {
-        matchesSearch = (
-            restaurant.name.toLowerCase().includes(searchTermLower) ||
-            (restaurant.address && restaurant.address.toLowerCase().includes(searchTermLower)) ||
-            (restaurant.owner_details?.username && restaurant.owner_details.username.toLowerCase().includes(searchTermLower)) ||
-            (restaurant.id.toString().includes(searchTermLower))
-        );
-    }
-    
-    let matchesActivity = true;
-    if (filters.activity !== 'ALL') {
-        matchesActivity = restaurant.is_active === (filters.activity === 'ACTIVE');
-    }
-
-    let matchesApproval = true;
-    if (filters.approval !== 'ALL') {
-        matchesApproval = restaurant.is_approved === (filters.approval === 'APPROVED');
-    }
-    
-    let matchesCategory = true;
-    if (filters.category !== 'ALL') {
-        matchesCategory = restaurant.categories?.some(cat => cat.id.toString() === filters.category);
-    }
-
-    return matchesSearch && matchesActivity && matchesApproval && matchesCategory;
-  }).sort((a,b) => new Date(b.date_created) - new Date(a.date_created));
-
+  useEffect(() => {
+    fetchRestaurantsAndCategories();
+  }, [filters.activity, filters.approval, fetchRestaurantsAndCategories]); // Add searchTerm if it should auto-search
 
   if (error) {
     return (
@@ -186,8 +196,8 @@ const ManageRestaurantsPage = () => {
             <input
               type="text"
               placeholder="Kërko restorant (emër, email, qytet)..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={filters.searchTerm}
+              onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
               className="input-form w-full pl-10"
             />
           </div>
@@ -196,16 +206,27 @@ const ManageRestaurantsPage = () => {
                 <FunnelIcon className="h-5 w-5 text-gray-400 dark:text-slate-500" />
             </div>
             <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              value={filters.activity}
+              onChange={(e) => setFilters(prev => ({ ...prev, activity: e.target.value }))}
               className="input-form w-full pl-10"
             >
-              <option value="">Të gjitha Statuset</option>
-              <option value="PENDING">Në Pritje</option>
-              <option value="APPROVED">Aprovuar</option>
-              <option value="REJECTED">Refuzuar</option>
+              <option value="ALL">Të gjitha Aktivitetet</option>
               <option value="ACTIVE">Aktiv</option>
               <option value="INACTIVE">Joaktiv</option>
+            </select>
+          </div>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FunnelIcon className="h-5 w-5 text-gray-400 dark:text-slate-500" />
+            </div>
+            <select
+              value={filters.approval}
+              onChange={(e) => setFilters(prev => ({ ...prev, approval: e.target.value }))}
+              className="input-form w-full pl-10"
+            >
+              <option value="ALL">Të gjitha Miratimet</option>
+              <option value="APPROVED">E Miratuar</option>
+              <option value="PENDING">Në Pritje</option>
             </select>
           </div>
         </div>
@@ -239,6 +260,7 @@ const ManageRestaurantsPage = () => {
                     onDelete={(id) => openConfirmation("Konfirmo Fshirjen", `Jeni të sigurt që doni të fshini restorantin "${restaurants.find(r=>r.id===id)?.name || id}"? Ky veprim nuk mund të kthehet.`, () => handleDelete(id), "Fshij", "danger")}
                     onToggleActive={(id, currentVal) => openConfirmation("Ndrysho Statusin e Aktivitetit", `Ndrysho statusin e aktivitetit për restorantin "${restaurants.find(r=>r.id===id)?.name}" në "${!currentVal ? 'Aktiv' : 'Joaktiv'}"?`, () => handleToggleField(id, 'is_active', currentVal))}
                     onToggleApproval={(id, currentVal) => openConfirmation("Nrysho Statusin e Miratimit", `Ndrysho statusin e miratimit për restorantin "${restaurants.find(r=>r.id===id)?.name}" në "${!currentVal ? 'Miratuar' : 'Në Pritje'}"?`, () => handleToggleField(id, 'is_approved', currentVal))}
+                    onApprove={(id) => handleApproveRestaurant(id)}
                   />
                 ))
               ) : (

@@ -1,6 +1,7 @@
 // src/modules/customer/components/AddressForm.jsx
 import React, { useState, useEffect } from 'react';
 import Button from '../../../components/Button.jsx'; // Sigurohu që ky path është korrekt
+import { ArrowPathIcon, CheckCircleIcon } from '@heroicons/react/24/outline'; // Importo ikonat
 
 // Shto props: onSubmit, onCancel, isLoading, submitButtonText
 const AddressForm = ({ initialData = {}, onSubmit, onCancel, submitButtonText = "Ruaj Adresën", isLoading = false }) => {
@@ -21,7 +22,6 @@ const AddressForm = ({ initialData = {}, onSubmit, onCancel, submitButtonText = 
             country: initialData.country || 'Kosovo',
             is_default_shipping: initialData.is_default_shipping || false,
         });
-        setError(''); 
     }, [initialData]);
 
     const handleChange = (e) => {
@@ -71,13 +71,21 @@ const AddressForm = ({ initialData = {}, onSubmit, onCancel, submitButtonText = 
                 <input id="address-is_default_shipping" name="is_default_shipping" type="checkbox" checked={formData.is_default_shipping} onChange={handleChange} className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 dark:border-slate-600 rounded" />
                 <label htmlFor="address-is_default_shipping" className="ml-2 block text-sm text-gray-900 dark:text-slate-200">Cakto si adresë primare</label>
             </div>
-            <div className="flex justify-end space-x-3 pt-2">
-                {onCancel && <Button type="button" variant="ghost" onClick={onCancel} disabled={isLoading}>Anulo</Button>}
-                <Button type="submit" variant="primary" isLoading={isLoading} disabled={isLoading}>
-                    {isLoading ? 'Duke Ruajtur...' : submitButtonText}
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                {onCancel && (
+                    <Button type="button" onClick={onCancel} variant="outline" fullWidth>
+                        Anulo
+                    </Button>
+                )}
+                <Button type="submit" variant="primary" isLoading={isLoading} disabled={isLoading} fullWidth
+                        iconLeft={isLoading ? ArrowPathIcon : CheckCircleIcon}
+                        iconLeftClassName="h-5 w-5" // Assuming h-5 w-5 was intended
+                >
+                    {submitButtonText}
                 </Button>
             </div>
         </form>
     );
 };
+
 export default AddressForm;

@@ -59,11 +59,7 @@ const ProfilePage = () => {
     setProfileData({ ...profileData, [e.target.name]: e.target.value });
   };
 
-  const handlePasswordChange = (e) => {
-    setPasswordData({ ...passwordData, [e.target.name]: e.target.value });
-  };
-
-  const handleProfileUpdate = async (e) => {
+  const handleProfileSubmit = async (e) => {
     e.preventDefault();
     setIsUpdatingProfile(true);
     setAuthError(null); // Pastro gabimet e AuthContext
@@ -89,7 +85,11 @@ const ProfilePage = () => {
     }
   };
 
-  const handlePasswordUpdate = async (e) => {
+  const handlePasswordChange = (e) => {
+    setPasswordData({ ...passwordData, [e.target.name]: e.target.value });
+  };
+
+  const handlePasswordChangeSubmit = async (e) => {
     e.preventDefault();
     if (passwordData.new_password !== passwordData.confirm_password) {
       showError('Fjalëkalimet e reja nuk përputhen.');
@@ -160,7 +160,7 @@ const ProfilePage = () => {
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 items-start">
         <div className="lg:col-span-2 space-y-8">
-          <form onSubmit={handleProfileUpdate} className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8">
+          <form onSubmit={handleProfileSubmit} className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8">
             <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-5 border-b border-gray-200 dark:border-slate-700 pb-3 flex items-center">
               <UserCircleIcon className="h-6 w-6 mr-2.5 text-primary-500" /> Informacionet Personale
             </h2>
@@ -199,7 +199,7 @@ const ProfilePage = () => {
             </div>
           </form>
 
-          <form onSubmit={handlePasswordUpdate} className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8">
+          <form onSubmit={handlePasswordChangeSubmit} className="bg-white dark:bg-slate-800 shadow-xl rounded-xl p-5 sm:p-6 md:p-8">
             <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-5 border-b border-gray-200 dark:border-slate-700 pb-3 flex items-center">
               <KeyIcon className="h-6 w-6 mr-2.5 text-primary-500" /> Ndrysho Fjalëkalimin
             </h2>
@@ -256,7 +256,8 @@ const ProfilePage = () => {
               size="md"
               onClick={() => { setShowAddressForm(prev => !prev); setEditingAddress(null); }}
               className="mt-5 w-full"
-              iconLeft={showAddressForm ? <XMarkIcon className="h-5 w-5"/> : <PlusCircleIcon className="h-5 w-5"/>}
+              iconLeft={showAddressForm ? XMarkIcon : PlusCircleIcon}
+              iconLeftClassName="h-5 w-5"
             >
               {showAddressForm ? (editingAddress ? 'Anulo Modifikimin' : 'Anulo Shto Adresë') : 'Shto Adresë të Re'}
             </Button>

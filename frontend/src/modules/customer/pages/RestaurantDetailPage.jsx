@@ -17,24 +17,24 @@ const RestaurantDetailPage = () => {
   const [reviews, setReviews] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { addItemToCart } = useCart();
-  const { isAuthenticated, user } = useAuth();
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const { isAuthenticated, user } = useAuth();
+  const { addItemToCart } = useCart();
 
   const fetchRestaurantData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       const [detailsData, menuData, reviewsData] = await Promise.all([
-        customerApi.fetchRestaurantDetails(restaurantId),
-        customerApi.fetchRestaurantMenu(restaurantId),
+        customerApi.fetchRestaurantById(restaurantId),
+        customerApi.fetchMenuCategoriesWithItems(restaurantId),
         customerApi.fetchRestaurantReviews(restaurantId)
       ]);
       setRestaurant(detailsData);
       setMenuCategories(menuData || []);
       setReviews(reviewsData.results || reviewsData || []);
     } catch (err) {
-      console.error("Failed to fetch restaurant data:", err);
+      console.error("Failed to fetch restaurant data:", err.message, err.stack);
       setError(err.message || "Problem në ngarkimin e detajeve të restorantit.");
     } finally {
       setIsLoading(false);

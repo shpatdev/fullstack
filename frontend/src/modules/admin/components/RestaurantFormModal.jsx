@@ -15,25 +15,25 @@ const RestaurantFormModal = ({ isOpen, onClose, restaurant, onSave }) => {
     name: '',
     address: '',
     phone: '',
-    owner: '', // Will store owner ID
+    owner_id: '', // Changed from owner to owner_id for clarity with backend
     is_active: true,
     is_approved: false,
-    image: null, // For file object
-    image_url: '', // For displaying existing or new image preview
-    categories_text: '', // Comma-separated category names for input
-    // category_ids: [], // If backend expects array of IDs directly
-    description: '', // Added description field
+    // image: null, // This will be handled by imageFile state
+    // image_url: '', // This will be handled by imagePreview state
+    category_ids: [], // Changed from categories_text to category_ids
+    description: '', 
   };
 
   const [formData, setFormData] = useState(initialFormData);
   const [potentialOwners, setPotentialOwners] = useState([]);
-  const [allGlobalCategories, setAllGlobalCategories] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [allGlobalCategories, setAllGlobalCategories] = useState([]); // For multiselect
+  const [isLoading, setIsLoading] = useState(false); // General loading for modal data
+  const [isSaving, setIsSaving] = useState(false); // Specific loading for save operation
   const [errors, setErrors] = useState({});
+  const [imageFile, setImageFile] = useState(null); // State for the actual image file
   const [imagePreview, setImagePreview] = useState('');
   const [activeTab, setActiveTab] = useState('basic');
   const [formError, setFormError] = useState(null);
-  const isSaving = isLoading; // Reuse isLoading for saving state
 
   const fetchModalData = useCallback(async () => {
     if (!user?.token || !isOpen) return;
@@ -59,17 +59,16 @@ const RestaurantFormModal = ({ isOpen, onClose, restaurant, onSave }) => {
       if (restaurant) {
         setFormData({
           name: restaurant.name || '',
-          address: restaurant.address || '',
-          phone: restaurant.phone || '',
-          owner: restaurant.owner || '',
+          address: restaurant.address_details?.street ? `${restaurant.address_details.street}, ${restaurant.address_details.city}` : (restaurant.address || ''),
+          phone: restaurant.phone_number || '',
+          owner_id: restaurant.owner_details?.id || restaurant.owner || '', // Use owner_details.id if available
           is_active: restaurant.is_active !== undefined ? restaurant.is_active : true,
           is_approved: restaurant.is_approved !== undefined ? restaurant.is_approved : false,
-          image: null,
-          image_url: restaurant.image || '', // Keep existing image URL for display
-          categories_text: restaurant.categories ? restaurant.categories.map(c => c.name).join(', ') : '',
+          category_ids: restaurant.cuisine_types ? restaurant.cuisine_types.map(cat => cat.id) : [],
           description: restaurant.description || '',
         });
-        setImagePreview(restaurant.image || '');
+        setImagePreview(restaurant.main_image_url_placeholder || restaurant.image || '');
+        setImageFile(null); // Reset image file on edit
       } else {
         setFormData(initialFormData);
         setImagePreview('');
@@ -84,10 +83,16 @@ const RestaurantFormModal = ({ isOpen, onClose, restaurant, onSave }) => {
       setFormData(prev => ({ ...prev, [name]: checked }));
     } else if (type === 'file') {
       const file = files[0];
+      setImageFile(file || null); // Store the file object
       if (file) {
-        setFormData(prev => ({ ...prev, image: file }));
         setImagePreview(URL.createObjectURL(file));
+      } else {
+        // If file is removed, revert to original image if editing, or clear if new
+        setImagePreview(restaurant?.main_image_url_placeholder || restaurant?.image || '');
       }
+    } else if (name === "category_ids") { // Handle multi-select for categories
+        const selectedIds = Array.from(e.target.selectedOptions, option => parseInt(option.value));
+        setFormData(prev => ({ ...prev, category_ids: selectedIds }));
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
@@ -100,7 +105,9 @@ const RestaurantFormModal = ({ isOpen, onClose, restaurant, onSave }) => {
     if (!formData.address.trim()) newErrors.address = "Adresa është e detyrueshme.";
     if (!formData.phone.trim()) newErrors.phone = "Telefoni është i detyrueshëm.";
     else if (!/^[0-9\s+\-()]{7,15}$/.test(formData.phone)) newErrors.phone = "Formati i telefonit invalid.";
-    if (!formData.categories_text.trim()) newErrors.categories_text = "Duhet të specifikoni të paktën një kategori.";
+    // if (!formData.categories_text.trim()) newErrors.categories_text = "Duhet të specifikoni të paktën një kategori.";
+    if (!formData.category_ids || formData.category_ids.length === 0) newErrors.category_ids = "Duhet të zgjidhni të paktën një kategori.";
+    if (!restaurant && !formData.owner_id) newErrors.owner_id = "Pronari është i detyrueshëm për restorante të reja.";
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -108,39 +115,34 @@ const RestaurantFormModal = ({ isOpen, onClose, restaurant, onSave }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validateForm()) return;
-    setIsLoading(true);
+    if (!validateForm()) {
+        setFormError("Ju lutem korrigjoni gabimet në formular.");
+        return;
+    }
+    setFormError(null);
+    setIsSaving(true);
     
-    // For a real API, you'd use FormData for file uploads.
-    // The mock API `adminApi.js` expects a JSON-like object and handles image as a string.
-    // We will prepare a payload suitable for the mock API.
-    const payload = {
+    const finalPayload = {
       name: formData.name,
-      address: formData.address,
-      phone: formData.phone,
-      owner: formData.owner ? parseInt(formData.owner) : null,
+      address: formData.address, // Backend might need to parse this into street, city, etc. or expect structured address
+      phone_number: formData.phone,
+      owner_id: formData.owner_id ? parseInt(formData.owner_id) : null,
       is_active: formData.is_active,
       is_approved: formData.is_approved,
-      categories_text: formData.categories_text, // Mock API will parse this
+      cuisine_type_ids: formData.category_ids, // Ensure backend expects 'cuisine_type_ids'
       description: formData.description,
     };
-
-    if (formData.image) {
-      // For mock: if a new image is selected, use a placeholder. A real API would handle the file.
-      payload.image = `https://placehold.co/100x100/E81123/white?text=${formData.name.substring(0,3)}`;
-    } else if (restaurant?.image) {
-      // If no new image, but an old one exists, keep it (mock behavior)
-      payload.image = restaurant.image;
-    }
 
 
     try {
       let savedRestaurant;
       if (restaurant?.id) {
-        savedRestaurant = await adminApi.updateRestaurant(restaurant.id, payload, user.token);
+        // Pass imageFile to updateRestaurant
+        savedRestaurant = await adminApi.updateRestaurant(restaurant.id, finalPayload, imageFile);
         showSuccess("Restoranti u përditësua me sukses!");
       } else {
-        savedRestaurant = await adminApi.createRestaurant(payload, user.token);
+        // Pass imageFile to createRestaurant
+        savedRestaurant = await adminApi.createRestaurant(finalPayload, imageFile);
         showSuccess("Restoranti u shtua me sukses!");
       }
       onSave(savedRestaurant);
@@ -151,7 +153,7 @@ const RestaurantFormModal = ({ isOpen, onClose, restaurant, onSave }) => {
       showError(errMsg);
       if(error.response?.data?.errors) setErrors(error.response.data.errors);
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
@@ -204,7 +206,7 @@ const RestaurantFormModal = ({ isOpen, onClose, restaurant, onSave }) => {
                     </div>
                     <div>
                         <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Telefoni</label>
-                        <input type="tel" name="phone" id="phone" value={formData.phone} onChange={handleChange}
+                        <input type="tel" name="phone" id="phone" value={formData.phone} onChange={handleChange} required
                                 className={`input-form ${errors.phone ? 'input-form-error' : ''}`}/>
                         {errors.phone && <p className="input-error-message">{errors.phone}</p>}
                     </div>
@@ -225,28 +227,37 @@ const RestaurantFormModal = ({ isOpen, onClose, restaurant, onSave }) => {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
                     <div>
-                    <label htmlFor="owner" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Pronari (Opsional)</label>
-                    <select name="owner" id="owner" value={formData.owner} onChange={handleChange}
-                            className="input-form">
+                    <label htmlFor="owner_id" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Pronari</label>
+                    <select name="owner_id" id="owner_id" value={formData.owner_id} onChange={handleChange}
+                            className={`input-form ${errors.owner_id ? 'input-form-error' : ''}`}
+                            required={!restaurant} // Required only if creating new restaurant
+                    >
                         <option value="">Zgjidh Pronarin</option>
                         {potentialOwners.map(owner => (
                         <option key={owner.id} value={owner.id}>{owner.username} ({owner.email})</option>
                         ))}
                     </select>
+                    {errors.owner_id && <p className="input-error-message">{errors.owner_id}</p>}
                     </div>
                     <div>
-                        <label htmlFor="categories_text" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                            Kategoritë (ndani me presje)
+                        <label htmlFor="category_ids" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Kategoritë e Kuzhinës
                         </label>
-                        <input type="text" name="categories_text" id="categories_text" value={formData.categories_text} onChange={handleChange} required
-                                placeholder="P.sh. Italiane, Pica, Ushqim i Shpejtë"
-                                className={`input-form ${errors.categories_text ? 'input-form-error' : ''}`}/>
-                        {errors.categories_text && <p className="input-error-message">{errors.categories_text}</p>}
-                        {allGlobalCategories.length > 0 && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                Sugjerime: {allGlobalCategories.slice(0,5).map(c => c.name).join(', ')}{allGlobalCategories.length > 5 ? '...' : ''}
-                            </p>
-                        )}
+                        <select 
+                            multiple 
+                            name="category_ids" 
+                            id="category_ids" 
+                            value={formData.category_ids.map(String)} // Value should be array of strings for multi-select
+                            onChange={handleChange} 
+                            required
+                            className={`input-form h-32 ${errors.category_ids ? 'input-form-error' : ''}`}
+                        >
+                            {allGlobalCategories.map(cat => (
+                                <option key={cat.id} value={cat.id}>{cat.name}</option>
+                            ))}
+                        </select>
+                        {errors.category_ids && <p className="input-error-message">{errors.category_ids}</p>}
+                        
                     </div>
                 </div>
 
@@ -298,9 +309,13 @@ const RestaurantFormModal = ({ isOpen, onClose, restaurant, onSave }) => {
                     {imagePreview && (
                         <div className="mt-3 relative group w-32 h-32">
                             <img src={imagePreview} alt="Parapamje" className="h-32 w-32 rounded-md object-cover shadow-md"/>
-                             <Button variant="danger" size="sm" type="button" 
-                                    onClick={() => { setFormData(prev => ({...prev, image: null, image_url: restaurant?.image || ''})); setImagePreview(restaurant?.image || '');}}
-                                    className="absolute top-1 right-1 p-1 opacity-0 group-hover:opacity-100 transition-opacity !rounded-full"
+                             <Button variant="icon" color="danger" size="xs" type="button" 
+                                    onClick={() => { 
+                                        setImageFile(null); 
+                                        // If editing, revert to original image, else clear
+                                        setImagePreview(restaurant?.main_image_url_placeholder || restaurant?.image || '');
+                                    }}
+                                    className="absolute top-1 right-1 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity !rounded-full bg-red-500 hover:bg-red-600 text-white"
                                     title="Hiq foton e re / Kthe foton origjinale">
                                 <XMarkIcon className="h-3 w-3"/>
                             </Button>
@@ -337,10 +352,10 @@ const RestaurantFormModal = ({ isOpen, onClose, restaurant, onSave }) => {
 
         <div className="pt-5 flex flex-col sm:flex-row justify-end items-center gap-3 border-t border-gray-200 dark:border-slate-700">
           {formError && <p className="text-sm text-red-600 dark:text-red-400">{formError}</p>}
-          <Button type="button" variant="ghost" onClick={onClose} iconLeft={XMarkIcon}>
+          <Button type="button" variant="ghost" onClick={onClose} iconLeft={XMarkIcon} disabled={isSaving}>
             Anulo
           </Button>
-          <Button type="submit" isLoading={isSaving} disabled={isSaving} iconLeft={CheckCircleIcon}>
+          <Button type="submit" isLoading={isSaving} disabled={isSaving || isLoading} iconLeft={CheckCircleIcon}>
             {restaurant ? 'Ruaj Ndryshimet' : 'Shto Restorantin'}
           </Button>
         </div>

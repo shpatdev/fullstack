@@ -12,7 +12,9 @@ from .models import (
     Review,
     ReviewReply,
     DriverProfile,
-    PageViewLog
+    PageViewLog,
+    Cart,
+    CartItem
 )
 
 # Regjistrimi i thjeshtë i modeleve
@@ -29,6 +31,8 @@ admin.site.register(Review)
 admin.site.register(ReviewReply)
 admin.site.register(DriverProfile)
 admin.site.register(PageViewLog)
+admin.site.register(Cart)
+admin.site.register(CartItem)
 
 # Shembull se si mund të personalizoni shfaqjen për një model (opsionale)
 # class RestaurantAdmin(admin.ModelAdmin):

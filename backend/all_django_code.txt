@@ -1,0 +1,3372 @@
+# File: api/__init__.py
+
+
+
+# End of File: api/__init__.py
+#------------------------------------------------------------------------------
+
+# File: api/admin.py
+
+from django.contrib import admin
+from .models import (
+    User,
+    Address,
+    CuisineType,
+    Restaurant,
+    OperatingHours,
+    MenuCategory,
+    MenuItem,
+    Order,
+    OrderItem,
+    Review,
+    ReviewReply,
+    DriverProfile,
+    PageViewLog,
+    Cart,
+    CartItem
+)
+
+# Regjistrimi i thjeshtë i modeleve
+admin.site.register(User)
+admin.site.register(Address)
+admin.site.register(CuisineType)
+admin.site.register(Restaurant)
+admin.site.register(OperatingHours)
+admin.site.register(MenuCategory)
+admin.site.register(MenuItem)
+admin.site.register(Order)
+admin.site.register(OrderItem)
+admin.site.register(Review)
+admin.site.register(ReviewReply)
+admin.site.register(DriverProfile)
+admin.site.register(PageViewLog)
+admin.site.register(Cart)
+admin.site.register(CartItem)
+
+# Shembull se si mund të personalizoni shfaqjen për një model (opsionale)
+# class RestaurantAdmin(admin.ModelAdmin):
+#     list_display = ('name', 'owner', 'is_active', 'is_approved', 'average_rating')
+#     list_filter = ('is_active', 'is_approved', 'cuisine_types')
+#     search_fields = ('name', 'owner__email', 'description')
+#     # Për fusha ManyToMany, mund të përdorni filter_horizontal ose filter_vertical
+#     filter_horizontal = ('cuisine_types',) 
+
+# admin.site.register(Restaurant, RestaurantAdmin) # Nëse do të përdornit këtë, hiqni admin.site.register(Restaurant) më lart
+
+# class OrderAdmin(admin.ModelAdmin):
+#     list_display = ('id', 'customer', 'restaurant', 'status', 'order_total', 'created_at')
+#     list_filter = ('status', 'payment_status', 'restaurant')
+#     search_fields = ('id', 'customer__email', 'restaurant__name')
+#     date_hierarchy = 'created_at'
+#     # Për të shfaqur OrderItems inline brenda Order (opsionale)
+#     # class OrderItemInline(admin.TabularInline):
+#     #     model = OrderItem
+#     #     extra = 0 # Sa forma boshe të shfaqen
+#     # inlines = [OrderItemInline]
+
+# admin.site.register(Order, OrderAdmin) # Nëse do të përdornit këtë, hiqni admin.site.register(Order) më lart
+
+
+# End of File: api/admin.py
+#------------------------------------------------------------------------------
+
+# File: api/apps.py
+
+from django.apps import AppConfig
+
+
+class ApiConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'api'
+
+    def ready(self):
+        import api.signals  # Ky rresht importon dhe lidh sinjalet tuaja
+
+# If this file was missing or the class name was different (e.g., ApiConfigdjango),
+# you would need to create/correct it as shown above.
+
+
+# End of File: api/apps.py
+#------------------------------------------------------------------------------
+
+# File: api/cache_utils.py
+
+from django.core.cache import cache
+import hashlib
+
+# --- Cuisine Types List Cache ---
+CUISINE_TYPES_LIST_VERSION_KEY = 'cuisine_types_list_version_v1' # Shtova _v1 për të lejuar ndryshime në strukturë pa konflikte
+CUISINE_TYPES_LIST_CACHE_KEY_PREFIX = 'cuisine_types_list_data_v'
+
+def get_cuisine_types_list_cache_version():
+    version = cache.get(CUISINE_TYPES_LIST_VERSION_KEY)
+    if version is None:
+        version = 1
+        cache.set(CUISINE_TYPES_LIST_VERSION_KEY, version, timeout=None) # Versioni nuk skadon vetë
+    return version
+
+def increment_cuisine_types_list_cache_version():
+    try:
+        version = cache.incr(CUISINE_TYPES_LIST_VERSION_KEY)
+    except ValueError: # Nëse çelësi nuk ekziston ose nuk është int
+        version = 1
+        cache.set(CUISINE_TYPES_LIST_VERSION_KEY, version, timeout=None)
+    print(f"Cuisine types list cache version incremented to: {version}")
+    return version
+
+def get_cuisine_types_list_cache_key():
+    version = get_cuisine_types_list_cache_version()
+    return f"{CUISINE_TYPES_LIST_CACHE_KEY_PREFIX}{version}"
+
+
+# --- Restaurants List Cache (Public, Paginated) ---
+RESTAURANTS_LIST_PUBLIC_VERSION_KEY = 'restaurants_list_public_version_v1'
+RESTAURANTS_LIST_PUBLIC_CACHE_KEY_PREFIX = 'restaurants_list_public_data_v'
+RESTAURANT_LIST_CACHE_TTL = 60 * 15 # Cache për 15 minuta
+
+def get_restaurants_list_public_cache_version():
+    version = cache.get(RESTAURANTS_LIST_PUBLIC_VERSION_KEY)
+    if version is None:
+        version = 1
+        cache.set(RESTAURANTS_LIST_PUBLIC_VERSION_KEY, version, timeout=None)
+    return version
+
+def increment_restaurants_list_public_cache_version():
+    try:
+        version = cache.incr(RESTAURANTS_LIST_PUBLIC_VERSION_KEY)
+    except ValueError:
+        version = 1
+        cache.set(RESTAURANTS_LIST_PUBLIC_VERSION_KEY, version, timeout=None)
+    print(f"Public restaurants list cache version incremented to: {version}")
+    return version
+
+def get_restaurants_list_public_cache_key(request):
+    """
+    Gjeneron një çelës cache për listën publike të restoranteve,
+    duke marrë parasysh parametrat e query-t për paginimin dhe filtrat e mundshëm.
+    """
+    version = get_restaurants_list_public_cache_version()
+    
+    # Përfshij parametrat relevantë të query-t në çelës për unikalitet
+    # P.sh., 'page', 'cuisine', 'search', etj.
+    # Krijojmë një string të qëndrueshëm nga query params
+    query_params = request.query_params.copy()
+    query_params.pop('format', None) # Hiq formatin nëse është prezent
+    
+    # Rendit parametrat për të siguruar që renditja nuk ndikon te çelësi
+    sorted_query_params = sorted(query_params.items())
+    
+    # Krijo një hash të parametrave të renditur
+    # Përdor një subset të parametrave që realisht ndikojnë në listën publike
+    # Këtu supozojmë se vetëm 'page' është relevant për cache-in publik fillestar.
+    # Nëse keni filtra publikë (p.sh. ?cuisine=Italian), duhet t'i përfshini.
+    
+    page_number = request.query_params.get('page', '1')
+    # Për një implementim më të fortë, mund të bësh hash të gjithë query string-ut relevant
+    # relevant_query_string = "&".join([f"{k}={v}" for k, v in sorted_query_params if k in ['page', 'relevant_filter1']])
+    # query_hash = hashlib.md5(relevant_query_string.encode('utf-8')).hexdigest()[:8]
+    # return f"{RESTAURANTS_LIST_PUBLIC_CACHE_KEY_PREFIX}{version}_params_{query_hash}"
+    
+    # Për thjeshtësi, vetëm me numrin e faqes për këtë shembull
+    return f"{RESTAURANTS_LIST_PUBLIC_CACHE_KEY_PREFIX}{version}_page{page_number}"
+
+def get_restaurants_list_public_all_items_cache_key(): # Për rastin kur nuk ka paginim
+    version = get_restaurants_list_public_cache_version()
+    return f"{RESTAURANTS_LIST_PUBLIC_CACHE_KEY_PREFIX}{version}_all_items"
+
+
+
+# End of File: api/cache_utils.py
+#------------------------------------------------------------------------------
+
+# File: api/models.py
+
+# backend/api/models.py
+from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.db import models
+from django.conf import settings # Për AUTH_USER_MODEL te ForeignKey
+from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils import timezone # SHTO KËTË
+
+class UserManager(BaseUserManager):
+    """Menaxher i personalizuar për modelin User."""
+
+    def create_user(self, email, password=None, **extra_fields):
+        """Krijon dhe ruan një User me email dhe fjalëkalim."""
+        if not email:
+            raise ValueError('Përdoruesit duhet të kenë një adresë email')
+        email = self.normalize_email(email)
+        # first_name, last_name, etj., merren nga extra_fields
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        """Krijon dhe ruan një superuser me email dhe fjalëkalim."""
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('role', User.Role.ADMIN) # Cakto rolin Admin për superuser
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser duhet të ketë is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser duhet të ketë is_superuser=True.')
+        
+        # Sigurohu që REQUIRED_FIELDS (first_name, last_name) janë dhënë
+        # Kjo zakonisht trajtohet nga komanda createsuperuser, por mund të shtosh kontrolle këtu
+        # if not extra_fields.get('first_name'):
+        #     raise ValueError('Superuser duhet të ketë first_name.')
+        # if not extra_fields.get('last_name'):
+        #     raise ValueError('Superuser duhet të ketë last_name.')
+
+        return self.create_user(email, password, **extra_fields)
+
+class User(AbstractUser):
+    """Modeli i personalizuar i përdoruesit."""
+    class Role(models.TextChoices):
+        ADMIN = 'ADMIN', 'Admin'
+        CUSTOMER = 'CUSTOMER', 'Customer'
+        RESTAURANT_OWNER = 'RESTAURANT_OWNER', 'Restaurant Owner'
+        DRIVER = 'DRIVER', 'Driver'
+
+    username = None  # Heqim username, do përdorim email për login
+    email = models.EmailField(unique=True, help_text='Adresa e email-it, përdoret për login.')
+    
+    
+    # first_name dhe last_name trashëgohen nga AbstractUser dhe janë CharField(max_length=150, blank=True)
+    # Kështu që nuk ka nevojë t'i rideklarojmë nëse nuk duam t'i ndryshojmë atributet e tyre.
+
+    role = models.CharField(
+        max_length=20,
+        choices=Role.choices,
+        default=Role.CUSTOMER,
+        help_text='Roli i përdoruesit në sistem.'
+    )
+    
+    phone_number = models.CharField(
+        max_length=20, 
+        blank=True, 
+        null=True,
+        help_text='Numri i telefonit (opsional).'
+    )
+    bio = models.TextField(blank=True, null=True, help_text="Një përshkrim i shkurtër për përdoruesin.")
+    profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True, help_text="Fotoja e profilit.")
+
+    is_available_for_delivery = models.BooleanField(default=False, help_text="A është shoferi aktualisht i disponueshëm për të marrë dërgesa?") 
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['first_name', 'last_name'] # Kërkohen vetëm gjatë `createsuperuser`
+
+    objects = UserManager()
+
+    def __str__(self):
+        return self.email
+
+    @property
+    def full_name(self):
+        return f"{self.first_name} {self.last_name}".strip()
+
+class Address(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='addresses', 
+        help_text="Përdoruesi të cilit i përket kjo adresë."
+    )
+    # Do ta shtojmë lidhjen me restorantin më vonë:
+    # restaurant = models.ForeignKey('Restaurant', on_delete=models.CASCADE, related_name='addresses', null=True, blank=True)
+    
+    street = models.CharField(max_length=255, help_text="Rruga dhe numri.")
+    city = models.CharField(max_length=100, help_text="Qyteti.")
+    state_province = models.CharField(max_length=100, blank=True, null=True, help_text="Shteti/Provinca/Rajoni (opsionale).")
+    postal_code = models.CharField(max_length=20, help_text="Kodi postar.")
+    country = models.CharField(max_length=100, default='Kosovo', help_text="Shteti.")
+    
+    is_default_shipping = models.BooleanField(default=False, help_text="A është kjo adresa primare e dërgesës për përdoruesin?")
+    # is_primary_location = models.BooleanField(default=False) # Për restorantet, do ta shtojmë kur të kemi modelin Restaurant
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "Addresses" # Për emër më të mirë në admin panel
+        ordering = ['-is_default_shipping', '-created_at'] # Rendit default-in të parin
+
+    def __str__(self):
+        return f"{self.street}, {self.city}, {self.country} (Përdoruesi: {self.user.email})"
+    
+    # backend/api/models.py
+# ... (importet ekzistuese dhe modelet User, Address) ...
+
+class CuisineType(models.Model):
+    """Kategoritë globale të kuzhinës, p.sh., Italiane, Shqiptare, Kineze."""
+    name = models.CharField(max_length=100, unique=True, help_text="Emri i llojit të kuzhinës")
+    description = models.TextField(blank=True, null=True, help_text="Përshkrim i shkurtër (opsional)")
+    # image = models.ImageField(upload_to='cuisine_types/', null=True, blank=True) # Opsionale
+
+    class Meta:
+        verbose_name = "Lloj Kuzhine"
+        verbose_name_plural = "Llojet e Kuzhinave"
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+class Restaurant(models.Model):
+    """Modeli për Restorantin."""
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='owned_restaurants',
+        help_text="Pronari i restorantit (një përdorues me rolin RESTAURANT_OWNER)"
+    )
+    name = models.CharField(max_length=255, help_text="Emri zyrtar i restorantit")
+    description = models.TextField(blank=True, null=True, help_text="Përshkrim i detajuar i restorantit")
+    
+    # Adresa kryesore e restorantit
+    address = models.OneToOneField(
+        Address, 
+        on_delete=models.SET_NULL, # Nëse adresa fshihet, restoranti mbetet pa adresë, por nuk fshihet
+        null=True, 
+        blank=True, 
+        related_name='restaurant_location',
+        help_text="Adresa kryesore fizike e restorantit"
+    )
+    phone_number = models.CharField(max_length=20, help_text="Numri kryesor i telefonit të kontaktit")
+    
+    # Për imazhin, do të përdorim ImageField më vonë kur të konfigurojmë MEDIA_ROOT dhe MEDIA_URL
+    # main_image = models.ImageField(upload_to='restaurant_main_images/', null=True, blank=True)
+    main_image = models.ImageField(upload_to='restaurant_main_images/', null=True, blank=True, help_text="Fotoja kryesore e restorantit.")
+
+    cuisine_types = models.ManyToManyField(
+        CuisineType, 
+        related_name='restaurants', 
+        blank=True,
+        help_text="Llojet e kuzhinës që ofron restoranti"
+    )
+    
+    average_rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.00, help_text="Vlerësimi mesatar nga klientët")
+    delivery_time_estimate = models.CharField(max_length=50, blank=True, null=True, help_text="Koha e përafërt e dërgesës (p.sh., '25-35 min')")
+    price_range = models.CharField(max_length=10, blank=True, null=True, choices=[('€', '€ (Lirë)'), ('€€', '€€ (Mesatare)'), ('€€€', '€€€ (Shtrenjtë)')], help_text="Gama e çmimeve")
+
+    is_active = models.BooleanField(default=False, help_text="A është restoranti aktiv dhe i dukshëm për klientët (menaxhohet nga admini)?")
+    is_approved = models.BooleanField(default=False, help_text="A është restoranti i aprovuar nga platforma (menaxhohet nga admini)?")
+    
+    # Opsionale: Për Multi-Tenancy më të avancuar, mund të shtohet një lidhje me një model Tenant
+    # tenant = models.ForeignKey('Tenant', on_delete=models.SET_NULL, null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Restorant"
+        verbose_name_plural = "Restorantet"
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+class OperatingHours(models.Model):
+    """Orari i punës për një restorant."""
+    class DayOfWeek(models.IntegerChoices):
+        MONDAY = 1, 'E Hënë'
+        TUESDAY = 2, 'E Martë'
+        WEDNESDAY = 3, 'E Mërkurë'
+        THURSDAY = 4, 'E Enjte'
+        FRIDAY = 5, 'E Premte'
+        SATURDAY = 6, 'E Shtunë'
+        SUNDAY = 0, 'E Diel' # Standardi ISO 8601 (dhe Date.getDay() i JS) e ka të Dielën si 0 ose 7
+
+    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name='operating_hours')
+    day_of_week = models.IntegerField(choices=DayOfWeek.choices, help_text="Dita e javës")
+    open_time = models.TimeField(null=True, blank=True, help_text="Ora e hapjes (bosh nëse është mbyllur)")
+    close_time = models.TimeField(null=True, blank=True, help_text="Ora e mbylljes (bosh nëse është mbyllur)")
+    is_closed = models.BooleanField(default=False, help_text="A është restoranti i mbyllur gjatë gjithë kësaj dite?")
+
+    class Meta:
+        unique_together = ('restaurant', 'day_of_week')
+        ordering = ['restaurant', 'day_of_week']
+        verbose_name = "Orar Pune"
+        verbose_name_plural = "Oraret e Punës"
+
+    def __str__(self):
+        if self.is_closed or not self.open_time or not self.close_time:
+            return f"{self.restaurant.name} - {self.get_day_of_week_display()}: Mbyllur"
+        return f"{self.restaurant.name} - {self.get_day_of_week_display()}: {self.open_time.strftime('%H:%M')} - {self.close_time.strftime('%H:%M')}"
+
+class MenuCategory(models.Model):
+    """Kategoritë brenda menusë së një restoranti (Pica, Pasta, Pije, etj.)."""
+    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name='menu_categories')
+    name = models.CharField(max_length=100, help_text="Emri i kategorisë së menusë")
+    description = models.TextField(blank=True, null=True, help_text="Përshkrim i shkurtër (opsionale)")
+    display_order = models.PositiveIntegerField(default=0, db_index=True, help_text="Përdoret për të renditur kategoritë në shfaqje")
+
+    class Meta:
+        unique_together = ('restaurant', 'name') # Emri i kategorisë duhet të jetë unik brenda një restoranti
+        ordering = ['restaurant', 'display_order', 'name']
+        verbose_name = "Kategori Menuje"
+        verbose_name_plural = "Kategoritë e Menuve"
+
+    def __str__(self):
+        return f"{self.name} ({self.restaurant.name})"
+
+class MenuItem(models.Model):
+    """Një artikull specifik në menunë e një restoranti."""
+    category = models.ForeignKey(MenuCategory, on_delete=models.CASCADE, related_name='menu_items', help_text="Kategoria së cilës i përket ky artikull")
+    # Për qasje më të lehtë, mund të shtojmë edhe një ForeignKey direkt te Restaurant,
+    # edhe pse mund të arrihet përmes category.restaurant. Kjo mund të ndihmojë në query.
+    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name='all_menu_items', help_text="Restoranti të cilit i përket ky artikull") # SHTO KËTË
+
+    name = models.CharField(max_length=255, help_text="Emri i artikullit të menusë")
+    description = models.TextField(blank=True, null=True, help_text="Përshkrimi i artikullit")
+    price = models.DecimalField(max_digits=8, decimal_places=2, help_text="Çmimi i artikullit")
+    
+    # image = models.ImageField(upload_to='menu_item_images/', null=True, blank=True)
+    image = models.ImageField(upload_to='menu_item_images/', null=True, blank=True, help_text="Fotoja e artikullit të menusë.")
+    
+    is_available = models.BooleanField(default=True, help_text="A është ky artikull aktualisht i disponueshëm për porosi?")
+    # ingredients = models.TextField(blank=True, null=True, help_text="Lista e përbërësve (opsionale)")
+    # allergens = models.ManyToManyField('Allergen', blank=True) # Do të shtojmë modelin Allergen më vonë
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['category__display_order', 'category__name', 'name'] # Rendit sipas kategorisë dhe pastaj emrit
+        verbose_name = "Artikull Menuje"
+        verbose_name_plural = "Artikujt e Menuve"
+
+    def __str__(self):
+        return f"{self.name} ({self.category.name} - {self.restaurant.name})"
+
+# === MODELET E REJA PËR SHPORTËN ===
+class Cart(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='cart',
+        null=True, blank=True, # Lejo user të jetë null për përdorues anonimë (në të ardhmen)
+        help_text="Përdoruesi të cilit i përket shporta (ose sesioni për anonimë)"
+    )
+    # session_key = models.CharField(max_length=40, null=True, blank=True, unique=True) # Për përdorues anonimë
+    restaurant = models.ForeignKey(
+        Restaurant, 
+        on_delete=models.CASCADE, 
+        null=True, blank=True, # Shporta mund të jetë bosh pa restorant, ose restoranti caktohet me artikullin e parë
+        related_name='carts',
+        help_text="Restoranti nga i cili po porositet (një shportë për një restorant)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        user_identifier = self.user.email if self.user else f"Session Unknown" # Simplified session_key part
+        restaurant_name = self.restaurant.name if self.restaurant else "Pa Restorant"
+        return f"Shporta për {user_identifier} nga {restaurant_name}"
+
+    @property
+    def total_amount(self):
+        return sum(item.subtotal for item in self.items.all())
+
+class CartItem(models.Model):
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')
+    menu_item = models.ForeignKey(MenuItem, on_delete=models.CASCADE, related_name='cart_items')
+    quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('cart', 'menu_item') # Një artikull mund të jetë vetëm një herë në shportë, sasia e modifikon atë
+        ordering = ['added_at']
+
+    @property
+    def subtotal(self):
+        return self.menu_item.price * self.quantity
+
+    def __str__(self):
+        return f"{self.quantity} x {self.menu_item.name} në shportën ID: {self.cart.id}"
+# === FUNDI I MODELEVE TË REJA PËR SHPORTËN ===
+
+class Review(models.Model):
+    RATING_CHOICES = [(i, str(i)) for i in range(1, 6)]
+
+    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name='reviews')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews') # Autori i vlerësimit
+    rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+        choices=RATING_CHOICES
+    )
+    comment = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        # Siguron që një përdorues mund të lërë vetëm një vlerësim për restorant
+        unique_together = ('restaurant', 'user') 
+
+    def __str__(self):
+        return f"Review by {self.user.get_full_name() or self.user.email} for {self.restaurant.name} - {self.rating} stars"
+
+
+class ReviewReply(models.Model):
+    review = models.ForeignKey(Review, on_delete=models.CASCADE, related_name='replies')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, help_text="Përdoruesi që ka bërë përgjigjen (zakonisht pronari i restorantit ose admini)")
+    text = models.TextField(help_text="Përmbajtja e përgjigjes")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+        verbose_name = "Përgjigje Vlerësimi"
+        verbose_name_plural = "Përgjigjet e Vlerësimeve"
+        # Mund të shtosh unique_together = ('review', 'user') nëse një user mund të bëjë vetëm një reply për review
+        # unique_together = ('review',) # Nëse vetëm një reply lejohet për review, pavarësisht userit
+
+    def __str__(self):
+        return f"Reply by {self.user.email} to review for '{self.review.restaurant.name}'"
+
+
+class Order(models.Model):
+    class OrderStatus(models.TextChoices):
+        PENDING = 'PENDING', 'Në Pritje' # Porosia sapo është bërë nga klienti
+        CONFIRMED = 'CONFIRMED', 'Konfirmuar' # Restoranti e ka pranuar
+        PREPARING = 'PREPARING', 'Në Përgatitje'
+        READY_FOR_PICKUP = 'READY_FOR_PICKUP', 'Gati për Marrje/Dërgesë'
+        ON_THE_WAY = 'ON_THE_WAY', 'Në Rrugë' # Shoferi e ka marrë
+        DELIVERED = 'DELIVERED', 'Dërguar'
+        CANCELLED_BY_USER = 'CANCELLED_BY_USER', 'Anuluar nga Klienti'
+        CANCELLED_BY_RESTAURANT = 'CANCELLED_BY_RESTAURANT', 'Anuluar nga Restoranti'
+        FAILED_DELIVERY = 'FAILED_DELIVERY', 'Dërgesa Dështoi'
+
+    class PaymentMethod(models.TextChoices):
+        CASH_ON_DELIVERY = 'CASH_ON_DELIVERY', 'Para në Dorë'
+        CARD_ONLINE = 'CARD_ONLINE', 'Kartë Online' # Për të ardhmen
+
+    class PaymentStatus(models.TextChoices):
+        PENDING = 'PENDING', 'Në Pritje'
+        PAID = 'PAID', 'Paguar'
+        FAILED = 'FAILED', 'Dështuar'
+
+    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='orders', help_text="Klienti që bëri porosinë")
+    restaurant = models.ForeignKey(Restaurant, on_delete=models.SET_NULL, null=True, related_name='orders', help_text="Restoranti nga i cili u porosit")
+    driver = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='deliveries', limit_choices_to={'role': User.Role.DRIVER}, help_text="Shoferi i caktuar për dërgesën (opsional)")
+    
+    # Detajet e adresës së dërgesës (mund të kopjohen nga Adresa e userit në momentin e porosisë)
+    delivery_address_street = models.CharField(max_length=255, help_text="Rruga e dërgesës")
+    delivery_address_city = models.CharField(max_length=100, help_text="Qyteti i dërgesës")
+    delivery_address_postal_code = models.CharField(max_length=20, help_text="Kodi postar i dërgesës")
+    delivery_address_notes = models.TextField(blank=True, null=True, help_text="Shënime shtesë për dërgesën")
+    
+    order_total = models.DecimalField(max_digits=10, decimal_places=2, help_text="Shuma totale e porosisë")
+    sub_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Nëntotali para tarifave") # SHTO KËTË
+    delivery_fee = models.DecimalField(max_digits=6, decimal_places=2, default=0.00, help_text="Tarifa e dërgesës") # SHTO KËTË
+    # service_fee = models.DecimalField(max_digits=6, decimal_places=2, default=0.00, help_text="Tarifa e shërbimit (nëse ka)")
+
+    status = models.CharField(max_length=30, choices=OrderStatus.choices, default=OrderStatus.PENDING, db_index=True)
+    
+    payment_method = models.CharField(max_length=30, choices=PaymentMethod.choices, default=PaymentMethod.CASH_ON_DELIVERY)
+    payment_status = models.CharField(max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.PENDING, db_index=True)
+    payment_intent_id = models.CharField(max_length=255, blank=True, null=True, help_text="ID e pagesës nga procesori (p.sh., Stripe)") # Për pagesa online
+
+    estimated_delivery_time = models.DateTimeField(null=True, blank=True, help_text="Koha e parashikuar e dërgesës")
+    actual_delivery_time = models.DateTimeField(null=True, blank=True, help_text="Koha reale kur u dërgua")
+    
+    # Koha kur restoranti konfirmon, fillon përgatitjen, etj.
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    preparation_started_at = models.DateTimeField(null=True, blank=True)
+    ready_for_pickup_at = models.DateTimeField(null=True, blank=True)
+    picked_up_by_driver_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Porosi"
+        verbose_name_plural = "Porositë"
+
+    def __str__(self):
+        return f"Porosia #{self.id} nga {self.customer.email if self.customer else 'N/A'} te {self.restaurant.name if self.restaurant else 'N/A'}"
+
+    def save(self, *args, **kwargs):
+        # Përditëso kohët e statusit nëse statusi ndryshon
+        is_new = self._state.adding
+        if not is_new: # Nëse është një update
+            old_order = Order.objects.get(pk=self.pk)
+            if old_order.status != self.status:
+                if self.status == self.OrderStatus.CONFIRMED: self.confirmed_at = timezone.now()
+                elif self.status == self.OrderStatus.PREPARING: self.preparation_started_at = timezone.now()
+                elif self.status == self.OrderStatus.READY_FOR_PICKUP: self.ready_for_pickup_at = timezone.now()
+                elif self.status == self.OrderStatus.ON_THE_WAY: self.picked_up_by_driver_at = timezone.now()
+                elif self.status == self.OrderStatus.DELIVERED: self.actual_delivery_time = timezone.now()
+        super().save(*args, **kwargs)
+
+
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    menu_item = models.ForeignKey(MenuItem, on_delete=models.SET_NULL, null=True, help_text="Artikulli i menusë (mund të jetë fshirë nga menuja)")
+    # Ruajmë informacionin e artikullit në momentin e porosisë, në rast se artikulli ndryshon/fshihet më vonë
+    item_name_at_purchase = models.CharField(max_length=255, help_text="Emri i artikullit në momentin e blerjes")
+    item_price_at_purchase = models.DecimalField(max_digits=8, decimal_places=2, help_text="Çmimi i artikullit në momentin e blerjes")
+    quantity = models.PositiveIntegerField(default=1)
+    # item_notes = models.TextField(blank=True, null=True, help_text="Shënime specifike për këtë artikull në porosi")
+
+    def subtotal(self):
+        return self.item_price_at_purchase * self.quantity
+
+    class Meta:
+        verbose_name = "Artikull Porosie"
+        verbose_name_plural = "Artikujt e Porosive"
+        # unique_together = ('order', 'menu_item') # Mund të lejojë të njëjtin artikull me shënime të ndryshme
+
+    def __str__(self):
+        return f"{self.quantity} x {self.item_name_at_purchase} (Porosia #{self.order.id})"
+
+
+class DriverProfile(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        primary_key=True, # User bëhet çelësi primar
+        related_name='driver_profile',
+        limit_choices_to={'role': User.Role.DRIVER},
+        help_text="Përdoruesi (me rolin DRIVER) të cilit i përket ky profil."
+    )
+    vehicle_type = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True, 
+        help_text="Lloji i mjetit (p.sh., Motor, Makinë, Biçikletë)"
+    )
+    license_plate = models.CharField(
+        max_length=20, 
+        blank=True, 
+        null=True, 
+        unique=True, # Targa duhet të jetë unike ose null
+        help_text="Targa e mjetit (nëse ka)"
+    )
+    # current_location_lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, help_text="Gjerësia gjeografike aktuale")
+    # current_location_lon = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, help_text="Gjatësia gjeografike aktuale")
+    # Për lokacionin, mund të përdorni PostGIS ose një zgjidhje më të thjeshtë me dy fusha Decimal.
+    # Për momentin, i komentojmë pasi kërkojnë më shumë konfigurim dhe përditësime të shpeshta.
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Profil Shoferi"
+        verbose_name_plural = "Profilet e Shoferëve"
+
+    def __str__(self):
+        return f"Profil për shoferin: {self.user.email}"
+
+class PageViewLog(models.Model):
+    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name='page_views')
+    viewed_at = models.DateTimeField(auto_now_add=True)
+    # mund të shtosh user (nëse është i kyçur) ose IP address për më shumë detaje
+    # user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    # ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-viewed_at']
+        verbose_name = "Restaurant Page View Log"
+        verbose_name_plural = "Restaurant Page View Logs"
+
+    def __str__(self):
+        return f"View for {self.restaurant.name} at {self.viewed_at.strftime('%Y-%m-%d %H:%M')}"
+
+# End of File: api/models.py
+#------------------------------------------------------------------------------
+
+# File: api/permissions.py
+
+# backend/api/permissions.py
+from rest_framework import permissions
+from django.contrib.auth import get_user_model
+from .models import User # Ensure User model is imported if needed for roles
+
+User = get_user_model()
+
+class IsAdminOrReadOnly(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return request.user and request.user.is_staff
+
+
+class IsOwnerOrAdmin(permissions.BasePermission):
+    """
+    Leje e personalizuar për të lejuar vetëm pronarët e një objekti ose adminët ta modifikojnë atë.
+    """
+    def has_object_permission(self, request, view, obj):
+        # Lejet për shkrim jepen vetëm pronarit të objektit ose adminit.
+        if hasattr(obj, 'owner'): # Për modele si Restaurant
+            return obj.owner == request.user or request.user.is_staff
+        elif hasattr(obj, 'user'): # Për modele si Address, Review, DriverProfile
+            return obj.user == request.user or request.user.is_staff
+        # Për UserViewSet, ku objekti është vetë useri
+        elif isinstance(obj, get_user_model()):
+            return obj == request.user or request.user.is_staff
+        return False
+
+
+class IsOwnerOrAdminOrReadOnly(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS: return True
+        return request.user and request.user.is_authenticated
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS: return True
+        is_admin = request.user and request.user.is_staff
+        if hasattr(obj, 'user') and obj.user == request.user: return True
+        if hasattr(obj, 'owner') and obj.owner == request.user: return True
+        if is_admin: return True
+        return False
+
+
+class IsRestaurantOwnerOrAdmin(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS: return True
+        if not (request.user and request.user.is_authenticated): return False
+        if request.user.is_staff: return True
+        
+        # Për CREATE actions
+        if view.action == 'create' and view.basename == 'restaurant': # Krijimi i një restoranti të ri
+            return request.user.role == User.Role.RESTAURANT_OWNER
+        
+        # Për nested resources OSE actions që operojnë mbi një instancë të lidhur me restorantin
+        # si p.sh. add_reply te ReviewViewSet (ku pk është i review)
+        # ose create/update/delete te MenuCategoryViewSet/MenuItemViewSet/OperatingHoursViewSet
+        # (ku restaurant_pk është te kwargs)
+        restaurant_pk = view.kwargs.get('restaurant_pk')
+        
+        # Nëse jemi duke shtuar reply te një review, review_pk është te kwargs['pk']
+        # dhe restaurant_pk nuk është direkt te view.kwargs, por te review_instance.restaurant.id
+        # Këtë rast e trajtojmë te has_object_permission
+        if not restaurant_pk and view.action == 'add_reply' and view.basename.startswith('restaurant-reviews'):
+            # Për add_reply, has_object_permission do të bëjë kontrollin
+            return True 
+
+        if restaurant_pk:
+            from .models import Restaurant # Import i vonuar
+            try:
+                restaurant = Restaurant.objects.get(pk=restaurant_pk)
+                return restaurant.owner == request.user
+            except Restaurant.DoesNotExist:
+                return False
+        # Për veprime të tjera që nuk janë SAFE dhe nuk kanë restaurant_pk ose nuk janë create restaurant
+        # duhet të kthejë False nëse nuk është admin.
+        # Kjo mbulon rastet kur view nuk është nested ose nuk ka lidhje direkte me restaurant_pk në kwargs.
+        # Për shembull, një action në UserViewSet nuk do të kalonte këtu.
+        return False
+
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS: return True
+        if request.user and request.user.is_staff: return True
+        
+        target_restaurant = None
+        # from .models import Restaurant, MenuCategory, MenuItem, OperatingHours, Review, Order # Import i vonuar
+        
+        obj_class_name = obj.__class__.__name__
+
+        if obj_class_name == 'Restaurant': 
+            target_restaurant = obj
+        elif hasattr(obj, 'restaurant'): # Për MenuCategory, MenuItem, OperatingHours, Review, ReviewReply
+            target_restaurant = obj.restaurant
+        # elif obj_class_name == 'Order' and hasattr(obj, 'restaurant'): # Për OrderViewSet, tashmë mbulohet nga hasattr(obj, 'restaurant')
+            # target_restaurant = obj.restaurant
+
+        if target_restaurant:
+            return target_restaurant.owner == request.user
+        return False
+
+class IsCustomer(permissions.BasePermission):
+    """
+    Lejon aksesin vetëm për përdoruesit me rolin CUSTOMER.
+    """
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.role == User.Role.CUSTOMER)
+
+class IsDriverPermission(permissions.BasePermission):
+    """
+    Lejon akses vetëm nëse përdoruesi është shofer (ose admin).
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return request.user.role == User.Role.DRIVER or request.user.is_staff
+
+class IsDriverOfOrderPermission(permissions.BasePermission):
+    """
+    Lejon akses vetëm nëse përdoruesi është shoferi i caktuar për atë porosi, ose admin.
+    Përdoret për has_object_permission.
+    """
+    def has_object_permission(self, request, view, obj): # obj këtu është instanca e Order
+        # Lejet për të lexuar mund të jenë më të gjera nëse dëshiron
+        # if request.method in permissions.SAFE_METHODS:
+        #     return obj.driver == request.user or obj.customer == request.user or \
+        #            (obj.restaurant and obj.restaurant.owner == request.user) or \
+        #            request.user.is_staff
+        
+        if request.user and request.user.is_staff: # Admini ka akses të plotë
+            return True
+        # Vetëm shoferi i caktuar mund të modifikojë (p.sh., statusin e dërgesës)
+        return obj.driver == request.user
+
+class IsAuthorOrAdminOrReadOnly(permissions.BasePermission):
+    """
+    Leje e personalizuar për të lejuar vetëm autorët e një objekti ose adminët ta modifikojnë atë.
+    Të tjerët kanë qasje vetëm për lexim.
+    """
+    def has_permission(self, request, view):
+        # Lejo metodat e sigurta (GET, HEAD, OPTIONS) për të gjithë.
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        # Për metodat e tjera (POST, PUT, DELETE), përdoruesi duhet të jetë i kyçur.
+        return request.user and request.user.is_authenticated
+
+    def has_object_permission(self, request, view, obj):
+        # Lejo metodat e sigurta (GET, HEAD, OPTIONS) për të gjithë.
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        
+        # Lejet për shkrim (PUT, PATCH, DELETE) jepen vetëm autorit të objektit ose adminit.
+        # Supozojmë se objekti ka një atribut 'user' ose 'owner'.
+        # Për modelin Review, do të jetë 'user'.
+        return obj.user == request.user or request.user.is_staff
+
+class IsDriverProfileOwnerOrAdmin(permissions.BasePermission):
+    """
+    Lejon aksesin për të modifikuar profilin e shoferit vetëm nga vetë shoferi ose nga një admin.
+    Të tjerët (nëse viewset-i do lejonte GET pa qenë admin/pronar) do kishin akses vetëm për lexim.
+    """
+    def has_object_permission(self, request, view, obj):
+        # Adminët mund të bëjnë gjithçka
+        if request.user and request.user.is_staff:
+            return True
+        # Shoferi mund të modifikojë vetëm profilin e tij
+        return obj.user == request.user
+
+# End of File: api/permissions.py
+#------------------------------------------------------------------------------
+
+# File: api/serializers.py
+
+# backend/api/serializers.py
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer as BaseTokenObtainPairSerializer
+from rest_framework_simplejwt.exceptions import AuthenticationFailed # Importo këtë
+from .models import (
+    Address, CuisineType, Restaurant, OperatingHours, 
+    MenuCategory, MenuItem, Review, DriverProfile, ReviewReply, # Shto DriverProfile dhe ReviewReply
+    Order, OrderItem, # Shto Order, OrderItem
+    Cart, CartItem # SHTO MODELET E REJA
+)
+
+User = get_user_model()
+
+# --- Serializers Ekzistues (User, Address) ---
+class AddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Address
+        # Përfshijmë 'id' që të mund të përdoret si nested dhe për update
+        fields = ('id', 'street', 'city', 'state_province', 'postal_code', 'country', 'is_default_shipping')
+        # 'user' do të vendoset nga view
+        # 'is_primary_location' mund të menaxhohet nga RestaurantSerializer
+
+class UserDetailSerializer(serializers.ModelSerializer):
+    """
+    Serializer për të shfaqur detajet e plota të një përdoruesi.
+    Përfshin adresat dhe profilin e shoferit (nëse është shofer).
+    """
+    addresses = AddressSerializer(many=True, read_only=True)
+    full_name = serializers.CharField(read_only=True)
+    driver_profile = serializers.SerializerMethodField() 
+
+    class Meta:
+        model = User
+        fields = (
+            'id', 'email', 'first_name', 'last_name', 'full_name', 'role', 
+            'phone_number', 'bio', 'profile_picture', # Ndryshuar nga profile_picture_url_placeholder
+            'is_staff', 'is_active', 'date_joined', 'addresses',
+            'is_available_for_delivery',
+            'driver_profile' 
+        )
+        read_only_fields = ('id', 'email', 'role', 'is_staff', 'date_joined', 'addresses', 'full_name', 'driver_profile')
+
+    def get_driver_profile(self, obj):
+        if obj.role == User.Role.DRIVER:
+            try:
+                profile = obj.driver_profile # Qasja te related_name
+                return DriverProfileSerializer(profile).data
+            except DriverProfile.DoesNotExist:
+                return None
+        return None
+
+class UserAdminManagementSerializer(serializers.ModelSerializer):
+    """Serializer për adminin për të menaxhuar përdoruesit. Lejon modifikimin e rolit, statusit, etj."""
+    full_name = serializers.CharField(read_only=True)
+    # Fusha 'password' mund të shtohet këtu si write_only=True nëse admini do të vendosë fjalëkalim gjatë krijimit
+    # password = serializers.CharField(write_only=True, required=False, allow_blank=True, style={'input_type': 'password'})
+
+    class Meta:
+        model = User
+        fields = (
+            'id', 'email', 'first_name', 'last_name', 'full_name', 'role',
+            'phone_number', 'bio', # profile_picture trajtohet me ImageField nëse admini e ngarkon
+            'is_staff', 'is_active', 'date_joined', 'is_available_for_delivery'
+            # 'password' # Shtoje këtu nëse e definon më lart
+        )
+        read_only_fields = ('id', 'email', 'date_joined', 'full_name')
+
+    def create(self, validated_data):
+        # Logjika për krijimin e userit nga admini
+        # Nëse 'password' është në validated_data, përdore atë, përndryshe gjenero një të rastësishëm ose kërko reset
+        
+        # Email duhet të jetë unik dhe i validuar, por User.objects.create_user e trajton këtë
+        # dhe serializeri do të bëjë validimin e email-it nëse ka një validator të tillë.
+        # Për siguri, mund të kontrollojmë këtu ose të mbështetemi te validimi i modelit/serializerit.
+        email = validated_data.get('email')
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError({"email": "Një përdorues me këtë email tashmë ekziston."})
+
+        password = validated_data.pop('password', None) # Hiq passwordin para se ta kalosh te create_user
+        
+        # Sigurohu që roli i dhënë është valid
+        role = validated_data.get('role', User.Role.CUSTOMER) # Default nëse nuk jepet
+        if role not in User.Role.values:
+            raise serializers.ValidationError({"role": f"Roli '{role}' nuk është i vlefshëm."})
+
+        user = User.objects.create_user(
+            email=email, 
+            password=password, # UserManager.create_user do ta bëjë hash
+            **validated_data # Kalo fushat e mbetura
+        )
+        return user
+
+    def update(self, instance, validated_data):
+        # Sigurohu që roli ADMIN të mos hiqet nga superuseri i fundit
+        if instance.is_superuser and 'role' in validated_data and validated_data['role'] != User.Role.ADMIN:
+            # Kontrollo nëse ky është superuseri i vetëm aktiv me rolin ADMIN
+            if User.objects.filter(is_superuser=True, role=User.Role.ADMIN, is_active=True).count() <= 1 and \
+               instance.pk == User.objects.filter(is_superuser=True, role=User.Role.ADMIN, is_active=True).first().pk:
+                raise serializers.ValidationError(
+                    {"role": "Nuk mund të hiqni rolin Admin nga superuser-i i vetëm aktiv."}
+                )
+        
+        # Admini nuk duhet të modifikojë fjalëkalimin këtu direkt; duhet të përdorë një action të dedikuar ose formën e admin panelit
+        validated_data.pop('password', None)
+        
+        # Email nuk duhet të modifikohet pas krijimit përmes këtij serializeri (është read_only_fields)
+        # por nëse do të lejohej, duhet të sigurohemi që nuk bëhet duplikat.
+        # if 'email' in validated_data and instance.email != validated_data['email']:
+        #     if User.objects.filter(email__iexact=validated_data['email']).exclude(pk=instance.pk).exists():
+        #         raise serializers.ValidationError({"email": "Ky email tashmë përdoret nga një tjetër përdorues."})
+
+        return super().update(instance, validated_data)
+
+class UserRegistrationSerializer(serializers.ModelSerializer):
+    """
+    Serializer për regjistrimin e përdoruesve të rinj.
+    Kërkon konfirmimin e fjalëkalimit dhe lejon caktimin e rolit.
+    """
+    password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'}, min_length=6)
+    password_confirm = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
+
+    class Meta:
+        model = User
+        fields = (
+            'id', 'email', 'first_name', 'last_name', 
+            'password', 'password_confirm', 'role', 
+            'phone_number', 'bio', 'profile_picture' # Ndryshuar nga profile_picture_url_placeholder
+        )
+    
+    def validate_email(self, value):
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("Një përdorues me këtë email tashmë ekziston.")
+        return value
+
+    def validate(self, attrs):
+        if attrs.get('password') != attrs.get('password_confirm'): # Përdor .get() për siguri
+            raise serializers.ValidationError({"password_confirm": "Fjalëkalimet nuk përputhen."})
+        attrs.pop('password_confirm', None)
+        return attrs
+
+    def create(self, validated_data):
+        role_to_set = validated_data.pop('role', User.Role.CUSTOMER)
+        # Sigurohemi që vetëm rolet e lejuara mund të vendosen gjatë regjistrimit publik
+        # P.sh., mos lejo 'ADMIN' direkt nga forma e regjistrimit publik
+        allowed_registration_roles = [User.Role.CUSTOMER, User.Role.RESTAURANT_OWNER, User.Role.DRIVER]
+        if role_to_set not in allowed_registration_roles:
+            role_to_set = User.Role.CUSTOMER # Default nëse roli i dhënë nuk lejohet
+
+        user = User.objects.create_user(
+            email=validated_data.pop('email'),
+            password=validated_data.pop('password'),
+            role=role_to_set,
+            **validated_data 
+        )
+        return user
+
+# --- Serializers të Rinj për Restorantin dhe Menunë ---
+
+class CuisineTypeSerializer(serializers.ModelSerializer):
+    """Serializer për Llojet e Kuzhinave."""
+    class Meta:
+        model = CuisineType
+        fields = ('id', 'name', 'description')
+
+class OperatingHoursSerializer(serializers.ModelSerializer):
+    day_of_week_display = serializers.CharField(source='get_day_of_week_display', read_only=True)
+
+    class Meta:
+        model = OperatingHours
+        fields = ('id', 'day_of_week', 'day_of_week_display', 'open_time', 'close_time', 'is_closed')
+        # 'restaurant' do të lidhet nga view ose RestaurantSerializer
+
+class MenuItemSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    category = serializers.PrimaryKeyRelatedField(queryset=MenuCategory.objects.all(), write_only=False)
+    restaurant_id = serializers.IntegerField(source='restaurant.id', read_only=True) # SHTO KËTË
+
+    class Meta:
+        model = MenuItem
+        fields = (
+            'id', 'category', 'category_name', 'restaurant_id', # SHTO restaurant_id
+            'name', 'description', 
+            'price', 'image', 'is_available' # Ndryshuar nga image_url_placeholder
+        )
+        # 'restaurant' do të lidhet automatikisht ose nga view
+
+class MenuCategorySerializer(serializers.ModelSerializer):
+    # Për të shfaqur artikujt brenda kategorisë (vetëm për lexim)
+    menu_items = MenuItemSerializer(many=True, read_only=True) 
+
+    class Meta:
+        model = MenuCategory
+        fields = ('id', 'name', 'description', 'display_order', 'menu_items')
+        # 'restaurant' do të lidhet nga view ose RestaurantSerializer
+
+
+# Serializer për listimin e restoranteve (më pak detaje)
+class RestaurantListSerializer(serializers.ModelSerializer):
+    """
+    Serializer për listimin e restoranteve me më pak detaje.
+    Përdoret për pamjen e listës së restoranteve.
+    """
+    cuisine_types = CuisineTypeSerializer(many=True, read_only=True)
+    address_summary = serializers.StringRelatedField(source='address', read_only=True) 
+    main_image_url = serializers.ImageField(source='main_image', read_only=True, use_url=True) # Kthe URL-në
+
+    class Meta:
+        model = Restaurant
+        fields = (
+            'id', 'name', 
+            'main_image_url', # NDRESHA KETU, perdor emrin e ri te fushes
+            'cuisine_types', 
+            'average_rating', 'delivery_time_estimate', 'price_range',
+            'address_summary', 
+            'is_active', 'is_approved' 
+        )
+
+# Serializer për detajet e restorantit, krijim, dhe përditësim
+class RestaurantDetailSerializer(serializers.ModelSerializer):
+    """
+    Serializer për shfaqjen e detajeve të plota të një restoranti,
+    si dhe për krijimin dhe përditësimin e restoranteve.
+    Lejon menaxhimin e adresës, orarit të punës dhe llojeve të kuzhinës.
+    """
+    owner_details = UserDetailSerializer(source='owner', read_only=True)
+    owner_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(role__in=[User.Role.RESTAURANT_OWNER, User.Role.ADMIN]),
+        source='owner',
+        write_only=True,
+        required=False, # E bën jo të detyrueshme për update, por e trajtojmë te create
+        allow_null=True # Lejon adminin ta lërë bosh nëse do, ose të mos e dërgojë fare
+    )
+    address_details = AddressSerializer(source='address', read_only=True)
+    address = AddressSerializer(write_only=True, required=False) # Për input gjatë create/update
+
+    operating_hours_details = OperatingHoursSerializer(source='operating_hours', many=True, read_only=True)
+    operating_hours = OperatingHoursSerializer(many=True, write_only=True, required=False)
+
+    cuisine_types_details = CuisineTypeSerializer(source='cuisine_types', many=True, read_only=True)
+    cuisine_type_ids = serializers.PrimaryKeyRelatedField(
+        queryset=CuisineType.objects.all(),
+        many=True,
+        write_only=True,
+        source='cuisine_types',
+        required=False
+    )
+    main_image_url = serializers.ImageField(source='main_image', read_only=True)
+
+    class Meta:
+        model = Restaurant
+        fields = [
+            'id', 'owner_details', 'owner_id', 'name', 'description', 'phone_number',
+            'main_image', 'main_image_url', 
+            'cuisine_types_details', 'cuisine_type_ids',
+            'price_range', 'delivery_time_estimate', 'average_rating',
+            'is_approved', 'is_active', 'created_at', 'updated_at',
+            'address_details', 'address', 
+            'operating_hours_details', 'operating_hours'
+        ]
+        read_only_fields = ['id', 'average_rating', 'created_at', 'updated_at', 'owner_details', 'address_details', 'cuisine_types_details', 'operating_hours_details', 'main_image_url']
+        extra_kwargs = {
+            'main_image': {'write_only': True, 'required': False, 'allow_null': True} # Lejo të jetë null
+        }
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        user = request.user
+
+        address_data = validated_data.pop('address', None)
+        hours_data_list = validated_data.pop('operating_hours', [])
+        cuisine_type_instances = validated_data.pop('cuisine_types', [])
+        main_image_file = validated_data.pop('main_image', None)
+
+        owner_instance = validated_data.pop('owner', None) # Kjo vjen nga source='owner' i owner_id
+        
+        if user.is_staff:
+            if not owner_instance: # Admini duhet të specifikojë owner_id për restorante të reja
+                raise serializers.ValidationError({"owner_id": "Admini duhet të specifikojë një pronar (owner_id) kur krijon restorant."})
+            # Sigurohu që owner_instance ka rolin e duhur
+            if owner_instance.role not in [User.Role.RESTAURANT_OWNER, User.Role.ADMIN]:
+                raise serializers.ValidationError({"owner_id": "Pronari i caktuar duhet të ketë rolin RESTAURANT_OWNER ose ADMIN."})
+            is_approved = validated_data.pop('is_approved', True) # Admini mund ta aprovojë direkt
+            is_active = validated_data.pop('is_active', True)   # Dhe ta bëjë aktiv
+        elif user.role == User.Role.RESTAURANT_OWNER:
+            owner_instance = user # Pronari krijon për vete
+            is_approved = False
+            is_active = False
+            # Hiq këto fusha nga validated_data nëse pronari nuk lejohet t'i vendosë gjatë krijimit
+            validated_data.pop('is_approved', None) 
+            validated_data.pop('is_active', None)
+        else:
+            # Kjo nuk duhet të ndodhë nëse lejet e view-it janë të sakta, por si masë sigurie.
+            raise serializers.ValidationError("Përdoruesi aktual nuk ka leje të krijojë restorant ose roli është i pasaktë.")
+        
+        restaurant = Restaurant.objects.create(
+            owner=owner_instance, 
+            is_approved=is_approved, 
+            is_active=is_active,
+            **validated_data
+        )
+
+        if main_image_file:
+            restaurant.main_image = main_image_file
+        
+        if address_data:
+            # Sigurohemi që `user` i kaluar te Address.objects.create është useri pronar i restorantit
+            address_data_user = owner_instance # Adresa duhet të lidhet me pronarin e restorantit
+            address_instance = Address.objects.create(user=address_data_user, **address_data)
+            restaurant.address = address_instance
+        
+        for hour_entry in hours_data_list:
+            OperatingHours.objects.create(restaurant=restaurant, **hour_entry)
+        
+        if cuisine_type_instances:
+            restaurant.cuisine_types.set(cuisine_type_instances)
+        
+        restaurant.save()
+        return restaurant
+
+    def update(self, instance, validated_data):
+        request = self.context.get('request')
+        user = request.user
+
+        address_data = validated_data.pop('address', None)
+        hours_data_list = validated_data.pop('operating_hours', None)
+        cuisine_type_instances = validated_data.pop('cuisine_types', None)
+        main_image_file = validated_data.pop('main_image', None)
+
+        if user.is_staff:
+            # Admini mund të ndryshojë pronarin
+            owner_instance_from_payload = validated_data.pop('owner', None) # Kjo vjen nga owner_id
+            if owner_instance_from_payload:
+                if owner_instance_from_payload.role not in [User.Role.RESTAURANT_OWNER, User.Role.ADMIN]:
+                     raise serializers.ValidationError({"owner_id": "Pronari i ri i caktuar duhet të ketë rolin RESTAURANT_OWNER ose ADMIN."})
+                instance.owner = owner_instance_from_payload
+            
+            # Admini mund të ndryshojë statusin e aprovimit dhe aktivizimit
+            instance.is_approved = validated_data.get('is_approved', instance.is_approved)
+            instance.is_active = validated_data.get('is_active', instance.is_active)
+        else: # Pronari i restorantit
+            # Pronari nuk mund të ndryshojë owner-in ose is_approved
+            validated_data.pop('owner', None) 
+            validated_data.pop('is_approved', None)
+            
+            # Për is_active, pronari mund ta ndryshojë vetëm nëse restoranti është i aprovuar.
+            # Kjo logjikë është më mirë të trajtohet nga një action specifik si `toggle_active_status`
+            # Por nëse duam ta lejojmë këtu:
+            if 'is_active' in validated_data:
+                new_active_status = validated_data.get('is_active')
+                if new_active_status and not instance.is_approved:
+                    raise serializers.ValidationError({"is_active": "Restoranti duhet të jetë i aprovuar nga administratori para se të mund të aktivizohet."})
+                instance.is_active = new_active_status
+            else:
+                # Nëse 'is_active' nuk është në payload, mos e ndrysho
+                validated_data.pop('is_active', None)
+
+
+        if main_image_file is not None: # Nëse një skedar i ri është ngarkuar
+            instance.main_image = main_image_file
+        elif 'main_image' in self.initial_data and self.initial_data['main_image'] is None:
+             # Nëse frontend-i dërgon main_image: null (ose një fushë e veçantë si clear_main_image: true)
+             # Kjo do të thotë që useri dëshiron ta heqë imazhin.
+            if instance.main_image: # Kontrollo nëse ka një imazh ekzistues para se të tentosh ta fshish
+                instance.main_image.delete(save=False) # Fshij skedarin nga storage
+            instance.main_image = None # Vendos fushën në None
+
+
+        # Përditëso fushat e tjera standarde të Restaurant
+        # Fushat si 'name', 'description', 'phone_number', 'price_range', 'delivery_time_estimate'
+        for attr, value in validated_data.items():
+            # Sigurohu që po vendos vetëm fushat që i përkasin direkt modelit Restaurant
+            # dhe nuk janë trajtuar tashmë (si owner, is_approved, is_active)
+            if hasattr(instance, attr) and attr not in ['owner', 'is_approved', 'is_active', 'main_image']:
+                setattr(instance, attr, value)
+
+        if address_data:
+            if instance.address:
+                # Përditëso adresën ekzistuese, duke siguruar që useri i adresës mbetet pronari i restorantit
+                address_serializer = AddressSerializer(instance.address, data=address_data, partial=True, context=self.context)
+                if address_serializer.is_valid(raise_exception=True):
+                    # Sigurohu që useri i adresës nuk ndryshohet aksidentalisht nëse nuk është admin
+                    # Ose, më mirë, sigurohu që adresa i përket pronarit aktual të restorantit
+                    # Kjo duhet të jetë e garantuar nga logjika e lejeve ose duke mos e lejuar ndryshimin e userit të adresës.
+                    # Për thjeshtësi, këtu supozojmë se AddressSerializer nuk lejon ndryshimin e 'user' nga jo-adminët.
+                    address_serializer.save(user=instance.owner) # Forco userin e adresës të jetë pronari
+            else:
+                # Krijo një adresë të re, duke e lidhur me pronarin e restorantit
+                new_address = Address.objects.create(user=instance.owner, **address_data)
+                instance.address = new_address
+        
+        if hours_data_list is not None: # Lejon pastrimin e orarit nëse dërgohet array bosh
+            instance.operating_hours.all().delete() # Fshij oraret e vjetra
+            for hour_entry in hours_data_list:
+                OperatingHours.objects.create(restaurant=instance, **hour_entry)
+        
+        if cuisine_type_instances is not None: # Lejon pastrimin e llojeve të kuzhinës
+            instance.cuisine_types.set(cuisine_type_instances)
+        
+        instance.save() # Ruaj instancën në fund për të gjitha ndryshimet e mundshme
+        return instance
+
+
+class ReviewReplySerializer(serializers.ModelSerializer):
+    user = UserDetailSerializer(read_only=True) 
+
+    class Meta:
+        model = ReviewReply
+        fields = ['id', 'user', 'text', 'created_at', 'updated_at'] 
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+
+class ReviewSerializer(serializers.ModelSerializer):
+    user = UserDetailSerializer(read_only=True)
+    replies = ReviewReplySerializer(many=True, read_only=True) 
+    # restaurant = RestaurantListSerializer(read_only=True) # Opsionale, mund të jetë e tepërt nëse është nested
+
+    class Meta:
+        model = Review
+        fields = ['id', 'user', 'restaurant', 'rating', 'comment', 'created_at', 'updated_at', 'replies']
+        read_only_fields = ['id', 'user', 'restaurant', 'created_at', 'updated_at', 'replies']
+        # 'restaurant' do të merret nga URL (nested view)
+        # 'user' do të merret nga request.user
+
+    def validate_rating(self, value):
+        if not 1 <= value <= 5:
+            raise serializers.ValidationError("Rating duhet të jetë ndërmjet 1 dhe 5.")
+        return value
+
+    def create(self, validated_data):
+        # Kontrolli unique_together ('restaurant', 'user') do të bëhet nga databaza
+        # por mund të shtosh një validim këtu nëse dëshiron një mesazh më miqësor.
+        request = self.context.get('request')
+        restaurant_pk = self.context.get('view').kwargs.get('restaurant_pk')
+        
+        if not request or not hasattr(request, "user"):
+            raise serializers.ValidationError("Përdoruesi duhet të jetë i kyçur për të lënë një vlerësim.")
+        
+        if Review.objects.filter(restaurant_id=restaurant_pk, user=request.user).exists():
+            raise serializers.ValidationError({"detail": "Ju tashmë keni lënë një vlerësim për këtë restorant."})
+
+        # restaurant dhe user do të vendosen në perform_create të viewset-it
+        return super().create(validated_data)
+
+
+class DriverProfileSerializer(serializers.ModelSerializer):
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    is_available_for_delivery = serializers.BooleanField(source='user.is_available_for_delivery', read_only=True) # Lexo nga User model
+
+    class Meta:
+        model = DriverProfile
+        fields = ['user', 'user_email', 'vehicle_type', 'license_plate', 'is_available_for_delivery', 'created_at', 'updated_at']
+        read_only_fields = ['user_email', 'is_available_for_delivery', 'created_at', 'updated_at']
+        # 'user' do të jetë ID-ja e userit (shoferit) gjatë krijimit/përditësimit.
+        # Bëjmë user writeable për të lejuar caktimin gjatë krijimit.
+        # Por duhet të sigurohemi që useri i caktuar ka rolin DRIVER.
+        extra_kwargs = {
+            'user': {'queryset': User.objects.filter(role=User.Role.DRIVER)}
+        }
+
+    def validate_user(self, value):
+        # Sigurohemi që useri ka rolin DRIVER
+        if value.role != User.Role.DRIVER:
+            raise serializers.ValidationError("Përdoruesi i zgjedhur duhet të ketë rolin 'DRIVER'.")
+        # Sigurohemi që nuk ekziston tashmë një profil për këtë shofer (nëse nuk është update)
+        # Kjo mbulohet nga OneToOneField, por mund të shtojmë një kontroll këtu për mesazh më të mirë.
+        # Për update, this.instance.user do të jetë i njëjtë me value.
+        if not self.instance and DriverProfile.objects.filter(user=value).exists():
+             raise serializers.ValidationError("Ky shofer tashmë ka një profil.")
+        return value
+
+
+class CustomTokenObtainPairSerializer(BaseTokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+        token['email'] = user.email
+        token['role'] = user.role
+        token['first_name'] = user.first_name
+        # token['full_name'] = user.full_name # Nëse e ke property
+        return token
+
+    def validate(self, attrs):
+        # Tento të marrësh email dhe password
+        email = attrs.get('email')
+        password = attrs.get('password')
+
+        if not email or not password:
+            # Ky rast zakonisht nuk duhet të ndodhë pasi DRF i bën fushat required
+            # por si masë sigurie
+            raise serializers.ValidationError(
+                {"detail": "Email dhe fjalëkalimi janë të detyrueshëm."},
+                code="authorization" # Mund të shtosh një kod gabimi
+            )
+        
+        # Printo për debugim vetëm nëse ke probleme
+        # print(f"CustomTokenObtainPairSerializer attempting to validate attrs: {attrs}")
+
+        try:
+            # super().validate(attrs) do të thërrasë authenticate()
+            # dhe do të hedhë AuthenticationFailed nëse kredencialet janë të gabuara
+            # ose useri nuk është aktiv.
+            data = super().validate(attrs)
+        except AuthenticationFailed as e:
+            # Kap AuthenticationFailed dhe rihidhe për t'u siguruar që DRF e trajton si JSON
+            # print(f"AuthenticationFailed in CustomTokenObtainPairSerializer: {str(e.detail)}")
+            raise AuthenticationFailed(e.detail, e.status_code if hasattr(e, 'status_code') else 'invalid_credentials')
+        except Exception as e:
+            # Për gabime të tjera të papritura gjatë validimit të prindit
+            # print(f"Unexpected error during super().validate in CustomTokenObtainPairSerializer: {e}")
+            # Kthe një gabim të përgjithshëm, por sigurohu që është ValidationError ose i ngjashëm
+            raise serializers.ValidationError(
+                {"detail": "Gabim i papritur gjatë procesit të login."},
+                code="server_error"
+            )
+
+        # Në këtë pikë, self.user duhet të jetë vendosur nga super().validate()
+        if not hasattr(self, 'user') or not self.user:
+            # Ky është një rast i pazakontë nëse super().validate nuk ka hedhur gabim
+            # print("CRITICAL: User object not set on serializer after successful super().validate()")
+            raise AuthenticationFailed( # Përdor AuthenticationFailed për konsistencë
+                {"detail": "Konfigurim i gabuar i autentikimit."}, 
+                code="authentication_setup_error"
+            )
+
+        # Krijo tokenat (refresh dhe access)
+        # refresh = self.get_token(self.user) # Kjo thirrje është tashmë bërë nga super().validate() dhe rezultati është te data
+        # data['refresh'] = str(refresh)
+        # data['access'] = str(refresh.access_token)
+        # Linjat e mësipërme janë të sakta, por 'data' nga super().validate() tashmë përmban 'refresh' dhe 'access'
+        # kështu që nuk ka nevojë t'i gjenerojmë përsëri, vetëm t'i shtojmë fushat tona.
+
+        # Shto detajet e plota të përdoruesit
+        # Sigurohu që context kalohet nëse UserDetailSerializer e pret (p.sh., për HyperlinkedRelatedField ose SerializerMethodField që përdorin request)
+        user_serializer_context = {}
+        if self.context and 'request' in self.context: # Kontrollo nëse context ekziston dhe ka 'request'
+            user_serializer_context = {'request': self.context.get('request')}
+        
+        data['user'] = UserDetailSerializer(self.user, context=user_serializer_context).data
+        
+        # print(f"CustomTokenObtainPairSerializer validate data to return: {data}")
+        return data
+
+# === SERIALIZERS PËR SHPORTËN ===
+class CartItemSerializer(serializers.ModelSerializer):
+    menu_item_details = MenuItemSerializer(source='menu_item', read_only=True)
+    subtotal = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = CartItem
+        fields = ('id', 'menu_item', 'menu_item_details', 'quantity', 'subtotal', 'added_at')
+        read_only_fields = ('id', 'menu_item_details', 'subtotal', 'added_at')
+        # 'menu_item' do të jetë ID kur krijohet/përditësohet (nga payload-i)
+        # 'cart' do të lidhet automatikisht
+
+class CartSerializer(serializers.ModelSerializer):
+    items = CartItemSerializer(many=True, read_only=True)
+    total_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    restaurant_details = RestaurantListSerializer(source='restaurant', read_only=True)
+
+    class Meta:
+        model = Cart
+        fields = ('id', 'user', 'restaurant', 'restaurant_details', 'items', 'total_amount', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'user', 'total_amount', 'created_at', 'updated_at', 'restaurant_details')
+        # 'restaurant' ID mund të jetë writeable nëse lejon krijimin e shportës me restorant të caktuar
+        # Përndryshe, do të caktohet nga artikulli i parë i shtuar.
+# === FUNDI I SERIALIZERS PËR SHPORTËN ===
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    # Mund të shfaqësh më shumë detaje për menu_item nëse dëshiron (read-only)
+    menu_item_details = MenuItemSerializer(source='menu_item', read_only=True, required=False) # Opsionale
+
+    class Meta:
+        model = OrderItem
+        fields = ('id', 'menu_item', 'item_name_at_purchase', 'item_price_at_purchase', 'quantity', 'subtotal')
+        read_only_fields = ('id', 'item_name_at_purchase', 'item_price_at_purchase', 'subtotal')
+        # 'menu_item' do të jetë ID kur dërgohet, 'order' lidhet automatikisht
+
+class OrderListSerializer(serializers.ModelSerializer): # Për listim (më pak detaje)
+    customer_email = serializers.EmailField(source='customer.email', read_only=True)
+    restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
+    driver_name = serializers.CharField(source='driver.full_name', read_only=True, allow_null=True) # Përdor property full_name
+
+    class Meta:
+        model = Order
+        fields = (
+            'id', 'customer_email', 'restaurant_name', 'driver_name', 'order_total', 
+            'status', 'payment_method', 'payment_status', 
+            'created_at', 'estimated_delivery_time'
+        )
+
+class OrderDetailSerializer(serializers.ModelSerializer):
+    customer = UserDetailSerializer(read_only=True) # Shfaq detajet e plota të klientit
+    restaurant = RestaurantListSerializer(read_only=True) # Shfaq detajet bazike të restorantit
+    driver = UserDetailSerializer(read_only=True, allow_null=True) # Shfaq detajet e shoferit
+    items = OrderItemSerializer(many=True, read_only=False) # Lejon krijimin e items bashkë me porosinë
+
+    # Fushat që dërgohen nga frontend-i për të krijuar porosinë
+    # Backend-i do të kalkulojë totalin dhe do të marrë adresën e saktë
+    delivery_address_id = serializers.PrimaryKeyRelatedField(
+        queryset=Address.objects.all(), write_only=True, source='delivery_address', # Ndrysho source
+        help_text="ID e adresës së zgjedhur nga përdoruesi"
+    )
+    # restaurant_id do të jetë në URL për krijim nga klienti, ose në payload nëse krijohet nga admini
+    restaurant_id = serializers.PrimaryKeyRelatedField(
+        queryset=Restaurant.objects.filter(is_active=True, is_approved=True), 
+        write_only=True, source='restaurant', 
+        help_text="ID e restorantit nga i cili porositet" # Required false nëse vjen nga URL
+    )
+
+
+    class Meta:
+        model = Order
+        fields = (
+            'id', 'customer', 'restaurant', 'restaurant_id', 'driver', 'items', 
+            'delivery_address_id', # Për input gjatë krijimit
+            'delivery_address_street', 'delivery_address_city', 'delivery_address_postal_code', 
+            'delivery_address_notes', 
+            'order_total', 'sub_total', 'delivery_fee', # SHTO sub_total, delivery_fee
+            'status', 
+            'payment_method', 'payment_status', 'payment_intent_id',
+            'estimated_delivery_time', 'actual_delivery_time', 
+            'confirmed_at', 'preparation_started_at', 'ready_for_pickup_at', 'picked_up_by_driver_at', # SHTO kohët
+            'created_at', 'updated_at'
+        )
+        read_only_fields = (
+            'id', 'customer', 'restaurant', 'driver', 
+            'delivery_address_street', 'delivery_address_city', 'delivery_address_postal_code',
+            'order_total', 'sub_total', 'delivery_fee', # SHTO këto
+            'payment_intent_id',
+            'actual_delivery_time', 'created_at', 'updated_at',
+            'confirmed_at', 'preparation_started_at', 'ready_for_pickup_at', 'picked_up_by_driver_at' # SHTO këto
+            # Statusi dhe estimated_delivery_time mund të jenë read_only për klientin, por të modifikueshme nga restoranti/admini
+        )
+        # 'delivery_address_street', 'city', 'postal_code' do të jenë read_only pasi të krijohen,
+        # pasi ato kopjohen nga Address me ID-në e dhënë.
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items')
+        # Adresa do të merret nga delivery_address_id
+        address_instance = validated_data.pop('delivery_address') # Ky ishte source i delivery_address_id
+        
+        # Sigurohu që adresa i përket përdoruesit të kyçur
+        if address_instance.user != self.context['request'].user:
+            raise serializers.ValidationError("Adresa e zgjedhur nuk ju përket juve.")
+
+        # Restoranti mund të vijë nga restaurant_id ose nga URL (nëse është nested view)
+        # Për momentin, supozojmë se vjen nga restaurant_id në payload
+        restaurant_instance = validated_data.pop('restaurant')
+
+        # Kopjo detajet e adresës te porosia
+        validated_data['delivery_address_street'] = address_instance.street
+        validated_data['delivery_address_city'] = address_instance.city
+        validated_data['delivery_address_postal_code'] = address_instance.postal_code
+        # validated_data['delivery_address_country'] = address_instance.country # Nëse e ke këtë fushë te Order
+
+        # Kalkulo totalin e porosisë bazuar te artikujt
+        calculated_sub_total = 0
+        for item_data in items_data:
+            menu_item = item_data.get('menu_item')
+            quantity = item_data.get('quantity')
+            if not menu_item or not quantity or not menu_item.is_available:
+                raise serializers.ValidationError(f"Artikulli '{menu_item.name if menu_item else 'i panjohur'}' nuk është i disponueshëm ose sasia është invalide.")
+            if menu_item.restaurant != restaurant_instance:
+                raise serializers.ValidationError(f"Artikulli '{menu_item.name}' nuk i përket restorantit të zgjedhur.")
+            calculated_sub_total += menu_item.price * quantity
+        
+        # Shto tarifat (nëse ka)
+        delivery_fee_value = 2.00 # Shembull: tarifa e dërgesës mund të vijë nga restoranti ose të jetë fikse
+        # validated_data['delivery_fee'] = delivery_fee
+
+        validated_data['sub_total'] = calculated_sub_total
+        validated_data['delivery_fee'] = delivery_fee_value
+        validated_data['order_total'] = calculated_sub_total + delivery_fee_value
+        
+        # Përdoruesi që bën kërkesën është klienti
+        order = Order.objects.create(
+            customer=self.context['request'].user, 
+            restaurant=restaurant_instance, 
+            **validated_data
+        )
+
+        for item_data in items_data:
+            menu_item_instance = item_data.get('menu_item')
+            OrderItem.objects.create(
+                order=order, 
+                menu_item=menu_item_instance,
+                item_name_at_purchase=menu_item_instance.name,
+                item_price_at_purchase=menu_item_instance.price,
+                quantity=item_data.get('quantity')
+            )
+        
+        # Pastro shportën e përdoruesit pas krijimit të porosisë
+        Cart.objects.filter(user=self.context['request'].user).delete()
+        
+        return order
+
+    def update(self, instance, validated_data):
+        # Lejo modifikimin vetëm të disa fushave dhe vetëm nga përdorues të autorizuar
+        request_user = self.context['request'].user
+        allowed_to_update = False
+        is_driver_updating_status = False
+
+        if request_user.is_staff: # Admin
+            allowed_to_update = True
+        elif instance.restaurant and request_user == instance.restaurant.owner: # Pronari i restorantit
+            allowed_to_update = True
+        elif instance.driver and request_user == instance.driver: # Shoferi i caktuar
+            # Shoferi mund të modifikojë vetëm statusin dhe vetëm nëse është ON_THE_WAY, DELIVERED, FAILED_DELIVERY
+            if 'status' in validated_data and validated_data['status'] in [
+                Order.OrderStatus.ON_THE_WAY, Order.OrderStatus.DELIVERED, Order.OrderStatus.FAILED_DELIVERY
+            ]:
+                allowed_to_update = True
+                is_driver_updating_status = True
+            else: # Nëse shoferi tenton të modifikojë diçka tjetër ose një status të palejuar
+                # Lejo vetëm modifikimin e statusit nga shoferi
+                non_status_fields = {k: v for k, v in validated_data.items() if k != 'status'}
+                if non_status_fields:
+                    raise serializers.ValidationError("Shoferët mund të modifikojnë vetëm statusin e dërgesës.")
+                if 'status' in validated_data: # Këtu statusi nuk është një nga ato të lejuarat
+                     raise serializers.ValidationError(f"Statusi '{validated_data['status']}' nuk lejohet të vendoset nga shoferi.")
+
+        if not allowed_to_update:
+            # Nëse nuk është asnjë nga rolet e mësipërme, ose shoferi po tenton të modifikojë fusha të palejuara
+            raise serializers.ValidationError("Nuk keni leje të modifikoni këtë porosi ose këto fusha.")
+
+        # Heq fushat që nuk duhet të modifikohen kurrë pas krijimit, ose nga role specifike
+        validated_data.pop('items', None) # Items nuk modifikohen kurrë pas krijimit
+        validated_data.pop('delivery_address_id', None) # Adresa nuk modifikohet
+        validated_data.pop('restaurant_id', None) # Restoranti nuk modifikohet
+
+        # Nëse është shofer që po modifikon statusin, lejo vetëm fushën 'status'
+        if is_driver_updating_status:
+            status_to_set = validated_data.get('status')
+            validated_data.clear() # Hiq gjithçka tjetër
+            validated_data['status'] = status_to_set
+        
+        return super().update(instance, validated_data)
+
+# End of File: api/serializers.py
+#------------------------------------------------------------------------------
+
+# File: api/signals.py
+
+from django.core.cache import cache
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+from .models import Restaurant, CuisineType
+from . import cache_utils # Importo modulin tonë ndihmës
+
+
+@receiver([post_save, post_delete], sender=Restaurant)
+def invalidate_restaurant_related_cache(sender, instance, **kwargs):
+    """
+    Ky sinjal thirret kur një restorant ruhet ose fshihet.
+    Incrementon versionin e cache-it për listën publike të restoranteve.
+    """
+    print(f"Sinjal: Restoranti '{instance.name}' u modifikua.")
+    cache_utils.increment_restaurants_list_public_cache_version()
+    
+    # Nëse keni cache për restorante individuale (p.sh., GET /api/restaurants/{id}/),
+    # do të duhej të fshinit edhe atë çelës specifik këtu.
+    # P.sh.: individual_restaurant_cache_key = f"restaurant_detail_{instance.pk}_v1"
+    # cache.delete(individual_restaurant_cache_key)
+
+@receiver([post_save, post_delete], sender=CuisineType)
+def invalidate_cuisine_type_related_cache(sender, instance, **kwargs):
+    """
+    Ky sinjal thirret kur një lloj kuzhine ruhet ose fshihet.
+    Incrementon versionin e cache-it për listën e llojeve të kuzhinave.
+    """
+    print(f"Sinjal: Lloji i kuzhinës '{instance.name}' u modifikua.")
+    cache_utils.increment_cuisine_types_list_cache_version()
+
+
+
+# End of File: api/signals.py
+#------------------------------------------------------------------------------
+
+# File: api/tests.py
+
+from django.test import TestCase
+
+# Create your tests here.
+
+
+# End of File: api/tests.py
+#------------------------------------------------------------------------------
+
+# File: api/tests/__init__.py
+
+# This file can be empty.
+
+
+# End of File: api/tests/__init__.py
+#------------------------------------------------------------------------------
+
+# File: api/tests/test_models.py
+
+from django.test import TestCase
+from django.contrib.auth import get_user_model
+from api.models import CuisineType, Restaurant, Address
+
+User = get_user_model()
+
+class UserModelTests(TestCase):
+
+    def test_create_user(self):
+        user = User.objects.create_user(
+            email='testuser@example.com',
+            password='password123',
+            first_name='Test',
+            last_name='User',
+            role=User.Role.CUSTOMER
+        )
+        self.assertEqual(user.email, 'testuser@example.com')
+        self.assertTrue(user.check_password('password123'))
+        self.assertEqual(user.role, User.Role.CUSTOMER)
+        self.assertEqual(user.full_name, 'Test User')
+
+    def test_create_superuser(self):
+        admin_user = User.objects.create_superuser(
+            email='super@example.com',
+            password='password123',
+            first_name='Super',
+            last_name='User'
+        )
+        self.assertEqual(admin_user.email, 'super@example.com')
+        self.assertTrue(admin_user.is_staff)
+        self.assertTrue(admin_user.is_superuser)
+        self.assertEqual(admin_user.role, User.Role.ADMIN)
+
+class CuisineTypeModelTests(TestCase):
+
+    def test_create_cuisine_type(self):
+        cuisine = CuisineType.objects.create(name="Italian", description="Delicious Italian food")
+        self.assertEqual(cuisine.name, "Italian")
+        self.assertEqual(str(cuisine), "Italian")
+
+class RestaurantModelTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            email='owner@example.com', password='password123', role=User.Role.RESTAURANT_OWNER
+        )
+        self.address = Address.objects.create(
+            user=self.owner, street="123 Main St", city="Testville", postal_code="12345", country="Testland"
+        )
+
+    def test_create_restaurant(self):
+        restaurant = Restaurant.objects.create(
+            owner=self.owner,
+            name="Test Restaurant",
+            address=self.address,
+            phone_number="1234567890"
+        )
+        self.assertEqual(restaurant.name, "Test Restaurant")
+        self.assertEqual(restaurant.owner, self.owner)
+        self.assertEqual(str(restaurant), "Test Restaurant")
+
+
+
+# End of File: api/tests/test_models.py
+#------------------------------------------------------------------------------
+
+# File: api/tests/test_serializers.py
+
+from django.test import TestCase
+from django.contrib.auth import get_user_model
+from api.serializers import UserRegistrationSerializer, CuisineTypeSerializer, RestaurantDetailSerializer
+from api.models import CuisineType, Address # Importo Address
+
+User = get_user_model()
+
+class UserRegistrationSerializerTests(TestCase):
+
+    def test_valid_registration(self):
+        data = {
+            'email': 'newuser@example.com',
+            'first_name': 'New',
+            'last_name': 'User',
+            'password': 'newpassword123',
+            'password_confirm': 'newpassword123',
+            'role': User.Role.CUSTOMER
+        }
+        serializer = UserRegistrationSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        user = serializer.save()
+        self.assertEqual(user.email, data['email'])
+        self.assertEqual(user.role, User.Role.CUSTOMER)
+
+    def test_password_mismatch(self):
+        data = {
+            'email': 'anotheruser@example.com',
+            'first_name': 'Another',
+            'last_name': 'User',
+            'password': 'password123',
+            'password_confirm': 'password456'
+        }
+        serializer = UserRegistrationSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('password_confirm', serializer.errors)
+
+    def test_existing_email(self):
+        User.objects.create_user(email='exists@example.com', password='password123')
+        data = {
+            'email': 'exists@example.com',
+            'first_name': 'Existing',
+            'last_name': 'Email',
+            'password': 'password123',
+            'password_confirm': 'password123'
+        }
+        serializer = UserRegistrationSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('email', serializer.errors)
+
+class CuisineTypeSerializerTests(TestCase):
+    def test_valid_cuisine_type_serializer(self):
+        valid_data = {'name': 'Mexican', 'description': 'Spicy and flavorful'}
+        serializer = CuisineTypeSerializer(data=valid_data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        cuisine_type = serializer.save()
+        self.assertEqual(cuisine_type.name, valid_data['name'])
+
+    def test_invalid_cuisine_type_serializer_missing_name(self):
+        invalid_data = {'description': 'No name here'}
+        serializer = CuisineTypeSerializer(data=invalid_data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('name', serializer.errors)
+
+class RestaurantDetailSerializerTests(TestCase):
+    def setUp(self):
+        self.owner_user = User.objects.create_user(
+            email="owner_res@example.com", password="password", role=User.Role.RESTAURANT_OWNER
+        )
+        self.cuisine1 = CuisineType.objects.create(name="Italiana")
+        self.cuisine2 = CuisineType.objects.create(name="Shqiptare")
+
+    def test_create_restaurant_with_serializer(self):
+        data = {
+            "owner_id": self.owner_user.pk,
+            "name": "My New Restaurant",
+            "description": "Best food in town.",
+            "phone_number": "045123123",
+            "address": {
+                "street": "Rruga B",
+                "city": "Prishtine",
+                "postal_code": "10000",
+                "country": "Kosovo"
+            },
+            "operating_hours": [
+                {"day_of_week": 1, "open_time": "09:00:00", "close_time": "22:00:00", "is_closed": False},
+                {"day_of_week": 0, "is_closed": True}
+            ],
+            "cuisine_type_ids": [self.cuisine1.pk, self.cuisine2.pk],
+            "price_range": "€€"
+        }
+        serializer = RestaurantDetailSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        restaurant = serializer.save()
+
+        self.assertEqual(restaurant.name, "My New Restaurant")
+        self.assertEqual(restaurant.owner, self.owner_user)
+        self.assertIsNotNone(restaurant.address)
+        self.assertEqual(restaurant.address.street, "Rruga B")
+        self.assertEqual(restaurant.operating_hours.count(), 2)
+        self.assertEqual(restaurant.cuisine_types.count(), 2)
+
+
+
+# End of File: api/tests/test_serializers.py
+#------------------------------------------------------------------------------
+
+# File: api/tests/test_views.py
+
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APITestCase, APIClient
+from django.contrib.auth import get_user_model
+from api.models import CuisineType, Restaurant, Address
+
+User = get_user_model()
+
+class CuisineTypeViewSetTests(APITestCase):
+
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_user = User.objects.create_superuser(
+            email='admin@example.com', password='password123', first_name='Admin', last_name='User'
+        )
+        self.user = User.objects.create_user(
+            email='test@example.com', password='password123', first_name='Test', last_name='User'
+        )
+        self.cuisine1 = CuisineType.objects.create(name='Italian')
+        self.cuisine2 = CuisineType.objects.create(name='Mexican')
+        self.list_url = reverse('cuisinetype-list') # Emri nga router.register(..., basename='cuisinetype')
+        self.detail_url = lambda pk: reverse('cuisinetype-detail', kwargs={'pk': pk})
+
+    def test_list_cuisine_types_unauthenticated(self):
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2) # Ose numri i faqosur nëse ka paginim
+
+    def test_list_cuisine_types_authenticated_user(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+
+    def test_retrieve_cuisine_type(self):
+        response = self.client.get(self.detail_url(self.cuisine1.pk))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['name'], self.cuisine1.name)
+
+    def test_create_cuisine_type_unauthenticated(self):
+        data = {'name': 'French', 'description': 'Classic French cuisine'}
+        response = self.client.post(self.list_url, data)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED) # Ose 403 nëse AllowAny por pa leje shkrimi
+
+    def test_create_cuisine_type_authenticated_non_admin(self):
+        self.client.force_authenticate(user=self.user)
+        data = {'name': 'French', 'description': 'Classic French cuisine'}
+        response = self.client.post(self.list_url, data)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_create_cuisine_type_admin(self):
+        self.client.force_authenticate(user=self.admin_user)
+        data = {'name': 'French', 'description': 'Classic French cuisine'}
+        response = self.client.post(self.list_url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(CuisineType.objects.count(), 3)
+        self.assertEqual(response.data['name'], 'French')
+
+    def test_update_cuisine_type_admin(self):
+        self.client.force_authenticate(user=self.admin_user)
+        data = {'name': 'Italian Updated', 'description': 'Even more delicious'}
+        response = self.client.put(self.detail_url(self.cuisine1.pk), data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.cuisine1.refresh_from_db()
+        self.assertEqual(self.cuisine1.name, 'Italian Updated')
+
+    def test_delete_cuisine_type_admin(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.delete(self.detail_url(self.cuisine1.pk))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(CuisineType.objects.count(), 1)
+
+class RestaurantViewSetPublicTests(APITestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.owner = User.objects.create_user(email="owner@test.com", password="password", role=User.Role.RESTAURANT_OWNER)
+        self.address = Address.objects.create(user=self.owner, street="1 Main", city="Test", postal_code="10000")
+        self.restaurant1 = Restaurant.objects.create(owner=self.owner, name="Approved Active", address=self.address, phone_number="111", is_active=True, is_approved=True)
+        Restaurant.objects.create(owner=self.owner, name="Inactive", address=None, phone_number="222", is_active=False, is_approved=True)
+        Restaurant.objects.create(owner=self.owner, name="Unapproved", address=None, phone_number="333", is_active=True, is_approved=False)
+        self.list_url = reverse('restaurant-list') # Emri nga router.register(r'restaurants', RestaurantViewSet)
+
+    def test_list_restaurants_public_view(self):
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Vetëm restorantet aktive dhe të aprovuara duhet të shfaqen
+        self.assertEqual(len(response.data), 1) # Ose numri i faqosur
+        self.assertEqual(response.data[0]['name'], "Approved Active")
+
+    def test_retrieve_restaurant_public_view(self):
+        detail_url = reverse('restaurant-detail', kwargs={'pk': self.restaurant1.pk})
+        response = self.client.get(detail_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['name'], self.restaurant1.name)
+
+# Këtu mund të shtoni më shumë teste për RestaurantViewSet duke simuluar role të ndryshme,
+# krijimin, modifikimin, fshirjen, dhe veprimet e personalizuara si 'approve_restaurant'.
+
+
+# End of File: api/tests/test_views.py
+#------------------------------------------------------------------------------
+
+# File: api/urls.py
+
+# backend/api/urls.py
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from rest_framework_nested import routers # Importo nested routers
+from rest_framework_simplejwt.views import TokenRefreshView
+from .views import OrderViewSet # Shto importin
+
+from .views import (
+    # Auth & User
+    UserRegistrationAPIView, 
+    CustomTokenObtainPairView, 
+    UserMeAPIView, 
+    UserViewSet, # Për adminin
+    AddressViewSet,
+    # Restaurant & Menu
+    CuisineTypeViewSet,
+    RestaurantViewSet,
+    MenuCategoryViewSet,
+    MenuItemViewSet,
+    OrderViewSet, # Ensure OrderViewSet is imported
+    ReviewViewSet, # Shto ReviewViewSet
+    OperatingHoursViewSet, # Sigurohu që OperatingHoursViewSet është këtu
+    DriverProfileViewSet, # Shto DriverProfileViewSet
+    LogoutAPIView, # Shto LogoutAPIView
+    ReviewReplyViewSet, # Shto këtë
+    CartViewSet # SHTO IMPORTIN E CARTVIEWSET
+)
+
+# Router kryesor
+router = DefaultRouter()
+router.register(r'admin/users', UserViewSet, basename='user-admin-management') # Për menaxhim nga Admini
+router.register(r'addresses', AddressViewSet, basename='address') # Për adresat e userit të kyçur
+router.register(r'cuisine-types', CuisineTypeViewSet, basename='cuisinetype') # CRUD për llojet e kuzhinave (Admin)
+router.register(r'restaurants', RestaurantViewSet, basename='restaurant') # SHTO basename='restaurant'
+router.register(r'orders', OrderViewSet, basename='order') 
+router.register(r'driver-profiles', DriverProfileViewSet, basename='driverprofile')
+router.register(r'cart', CartViewSet, basename='cart') # SHTO REGJISTRIMIN E CARTVIEWSET
+
+# Nested Router për MenuCategories nën Restaurants
+# /api/restaurants/{restaurant_pk}/categories/
+restaurants_router = routers.NestedSimpleRouter(router, r'restaurants', lookup='restaurant')
+restaurants_router.register(r'menu-categories', MenuCategoryViewSet, basename='restaurant-menucategory')
+
+# Nested Router për MenuItems nën Restaurants
+# /api/restaurants/{restaurant_pk}/menu-items/
+# Kjo do të listojë të gjithë artikujt e restorantit, pavarësisht kategorisë.
+# Filtimi sipas kategorisë mund të bëhet me query params ose një nested route tjetër nëse dëshirohet.
+restaurants_router.register(r'menu-items', MenuItemViewSet, basename='restaurant-menuitem')
+
+# Nested router për OperatingHours nën Restaurant
+restaurants_router.register(r'operating-hours', OperatingHoursViewSet, basename='restaurant-operating-hours')
+restaurants_router.register(r'reviews', ReviewViewSet, basename='restaurant-reviews') # Regjistro ReviewViewSet
+
+# Nested router për MenuItem nën MenuCategory (që është nën Restaurant)
+menu_categories_router = routers.NestedSimpleRouter(restaurants_router, r'menu-categories', lookup='menu_category')
+menu_categories_router.register(r'menu-items', MenuItemViewSet, basename='restaurant-menu-category-items') # Mund ta heqësh nëse nuk e përdor këtë nivel nesting-u për items
+
+# Nested router për ReviewReply nën Review
+reviews_router = routers.NestedSimpleRouter(restaurants_router, r'reviews', lookup='review')
+reviews_router.register(r'replies', ReviewReplyViewSet, basename='review-replies')
+
+
+# Duhet të ketë një nested router edhe për CartItem nën Cart
+# cart_items_router = routers.NestedSimpleRouter(router, r'cart', lookup='cart')
+# cart_items_router.register(r'items', CartItemViewSet, basename='cart-items')
+
+
+urlpatterns = [
+    # Auth endpoints
+    path('auth/register/', UserRegistrationAPIView.as_view(), name='auth_register'),
+    path('auth/login/', CustomTokenObtainPairView.as_view(), name='auth_login'),
+    path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('auth/me/', UserMeAPIView.as_view(), name='auth_me'),
+    path('auth/logout/', LogoutAPIView.as_view(), name='auth_logout'),
+    
+    # API endpoints të menaxhuara nga router-i kryesor dhe ato nested
+    path('', include(router.urls)),
+    path('', include(restaurants_router.urls)),
+    path('', include(reviews_router.urls)), # Shto këtë
+    # path('', include(menu_categories_router.urls)), # Komentoje nëse nuk e përdor nesting-un e thellë për items
+]
+
+# End of File: api/urls.py
+#------------------------------------------------------------------------------
+
+# File: api/views.py
+
+# backend/api/views.py
+from django.contrib.auth import get_user_model
+from django.shortcuts import get_object_or_404
+from django.utils import timezone 
+from django.utils.decorators import method_decorator 
+from django.core.cache import cache # Importo cache direkt
+from . import cache_utils # Importo modulin tonë ndihmës
+
+from rest_framework import generics, permissions, viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError
+
+
+from .models import (
+    User, Address, CuisineType, Restaurant, OperatingHours, 
+    MenuCategory, MenuItem, Order, OrderItem, Review, DriverProfile,
+    ReviewReply, PageViewLog,
+    Cart, CartItem # SHTO MODELET E SHPORTËS
+)
+from .serializers import (
+    UserDetailSerializer, UserRegistrationSerializer, AddressSerializer,
+    CuisineTypeSerializer, RestaurantListSerializer, RestaurantDetailSerializer,
+    OperatingHoursSerializer, MenuCategorySerializer, MenuItemSerializer,
+    CustomTokenObtainPairSerializer,
+    OrderListSerializer, OrderDetailSerializer, OrderItemSerializer,
+    ReviewSerializer, DriverProfileSerializer, ReviewReplySerializer,
+    CartSerializer, CartItemSerializer, UserAdminManagementSerializer # SHTO SERIALIZERS E SHPORTËS DHE UserAdminManagementSerializer
+)
+from .permissions import (
+    IsOwnerOrAdmin, IsRestaurantOwnerOrAdmin, IsCustomer,
+    IsAuthorOrAdminOrReadOnly, 
+    IsDriverProfileOwnerOrAdmin,
+    IsAdminOrReadOnly, 
+    IsOwnerOrAdminOrReadOnly,
+    IsDriverPermission, IsDriverOfOrderPermission # Ensure IsRestaurantOwnerOrAdmin, IsCustomer, IsDriverPermission, IsDriverOfOrderPermission are here
+)
+from django.db.models import Count, Sum, F, ExpressionWrapper, fields # SHTO F, ExpressionWrapper, fields
+
+User = get_user_model()
+
+# --- Auth & User Views ---
+class UserRegistrationAPIView(generics.CreateAPIView):
+    """
+    Endpoint për regjistrimin e përdoruesve të rinj.
+    Lejon këdo të krijojë një llogari të re.
+    """
+    queryset = User.objects.all()
+    serializer_class = UserRegistrationSerializer
+    permission_classes = [permissions.AllowAny]
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+
+class LogoutAPIView(APIView):
+    """
+    Endpoint për logout. Invalidon (shton në blacklist) refresh token-in e dhënë.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            refresh_token = request.data.get("refresh")
+            if refresh_token is None:
+                return Response({"detail": "Refresh token kërkohet."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            
+            return Response(status=status.HTTP_205_RESET_CONTENT)
+        except TokenError as e:
+            # Kthejmë një përgjigje më standarde për TokenError
+            return Response({"detail": "Token invalid ose i skaduar."}, status=status.HTTP_401_UNAUTHORIZED)
+        except Exception as e:
+            # Mund të shtosh logging më të mirë këtu për production
+            print(f"Logout error: {e}") 
+            return Response({"detail": "Gabim gjatë procesit të logout."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# ...
+class UserMeAPIView(generics.RetrieveUpdateAPIView):
+    """
+    Endpoint për të marrë dhe përditësuar detajet e përdoruesit të kyçur aktualisht.
+    Lejon modifikimin e fushave si emri, mbiemri, bio, foto profili, dhe disponueshmëria për shoferët.
+    """
+    serializer_class = UserDetailSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', True) # Bëje PATCH default për /me/
+        instance = self.get_object()
+        
+        # Lejo vetëm disa fusha të modifikohen nga vetë useri
+        allowed_fields_to_update = ['first_name', 'last_name', 'phone_number', 'bio', 'profile_picture'] # Ndryshuar nga profile_picture_url_placeholder
+        if instance.role == User.Role.DRIVER: # Shoferi mund të modifikojë edhe disponueshmërinë
+            allowed_fields_to_update.append('is_available_for_delivery')
+
+        data_to_update = {}
+        for field in allowed_fields_to_update:
+            if field in request.data:
+                data_to_update[field] = request.data[field]
+        
+        serializer = self.get_serializer(instance, data=data_to_update, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        if getattr(instance, '_prefetched_objects_cache', None):
+            instance._prefetched_objects_cache = {}
+        return Response(serializer.data)
+
+    # Mund të shtosh një @action specifik nëse preferon një endpoint të dedikuar
+    # @action(detail=False, methods=['patch'], url_path='set-availability')
+    # def set_availability(self, request):
+    #     user = request.user
+    #     if user.role != User.Role.DRIVER:
+    #         return Response({"detail": "Vetëm shoferët mund të ndryshojnë disponueshmërinë."}, status=status.HTTP_403_FORBIDDEN)
+    #     
+    #     is_available = request.data.get('is_available')
+    #     if not isinstance(is_available, bool):
+    #         return Response({"detail": "Fusha 'is_available' (boolean) kërkohet."}, status=status.HTTP_400_BAD_REQUEST)
+    #     
+    #     user.is_available_for_delivery = is_available
+    #     user.save(update_fields=['is_available_for_delivery'])
+    #     return Response(UserDetailSerializer(user).data)
+
+# ...
+
+class UserViewSet(viewsets.ModelViewSet): 
+    """
+    Menaxhimi i përdoruesve (Vetëm për Adminët).
+    Ky ViewSet lejon adminët të listojnë, marrin, përditësojnë dhe fshijnë përdorues.
+    Për create dhe update përdoret UserAdminManagementSerializer.
+    Për list dhe retrieve përdoret UserDetailSerializer.
+    """
+    queryset = User.objects.all().order_by('-date_joined')
+    # serializer_class = UserAdminManagementSerializer # Hiq këtë, përdor get_serializer_class
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_serializer_class(self):
+        if self.action == 'list' or self.action == 'retrieve':
+            return UserDetailSerializer # Për pamje të detajuar kur listohet ose merret një user
+        return UserAdminManagementSerializer # Për create, update, partial_update
+
+    def perform_create(self, serializer):
+        # UserAdminManagementSerializer.create tashmë e trajton logjikën e krijimit,
+        # përfshirë fjalëkalimin nëse dërgohet në payload.
+        # Sigurohu që UserAdminManagementSerializer.create pret 'password' në validated_data
+        # dhe e bën hash. Frontend-i duhet ta dërgojë atë.
+        serializer.save()
+
+    # Mund të shtosh actions të tjera këtu, p.sh., për të ndryshuar fjalëkalimin e një useri nga admini
+    @action(detail=True, methods=['post'], url_path='set-password-admin', permission_classes=[permissions.IsAdminUser])
+    def set_password_admin(self, request, pk=None):
+        user_to_update = self.get_object()
+        new_password = request.data.get('new_password')
+        if not new_password or len(new_password) < 6: # Shto validime më të mira
+            return Response({"detail": "Fjalëkalimi i ri kërkohet dhe duhet të jetë të paktën 6 karaktere."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        user_to_update.set_password(new_password)
+        user_to_update.save()
+        return Response({"message": f"Fjalëkalimi për {user_to_update.email} është ndryshuar me sukses."}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='reset-password-admin', permission_classes=[permissions.IsAdminUser])
+    def reset_password_admin(self, request, pk=None):
+        user_to_reset = self.get_object()
+        # KËTU IMPLEMENTO LOGJIKËN REALE PËR RESETIM
+        # P.sh., gjenero token, dërgo email.
+        # Për testim:
+        # from django.contrib.auth.tokens import default_token_generator
+        # from django.utils.http import urlsafe_base64_encode
+        # from django.utils.encoding import force_bytes
+        # token = default_token_generator.make_token(user_to_reset)
+        # uid = urlsafe_base64_encode(force_bytes(user_to_reset.pk))
+        # reset_link = f"http://your-frontend.com/auth/reset-password-confirm/{uid}/{token}/" # Përshtate
+        # print(f"RESET LINK (SIMULATED): {reset_link}")
+        # Dergo email me këtë link
+        return Response({"message": f"Kërkesa për resetimin e fjalëkalimit për {user_to_reset.email} është simuluar."}, status=status.HTTP_200_OK)
+
+
+class AddressViewSet(viewsets.ModelViewSet):
+    """
+    Menaxhimi i adresave për përdoruesit e kyçur.
+    Përdoruesit mund të krijojnë, listojnë, marrin, përditësojnë dhe fshijnë adresat e tyre.
+    Adminët mund të menaxhojnë të gjitha adresat.
+    """
+    serializer_class = AddressSerializer
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdminOrReadOnly] # Përdor këtë leje
+
+    def get_queryset(self):
+        # Kthe vetëm adresat e përdoruesit të kyçur
+        # Admini mund të shohë të gjitha adresat nëse e konfiguron ndryshe (p.sh., në një endpoint tjetër)
+        if self.request.user.is_staff: # Lejo adminin të shohë/menaxhojë të gjitha adresat
+             return Address.objects.all().order_by('-user__id', '-is_default_shipping', '-created_at')
+        return Address.objects.filter(user=self.request.user).order_by('-is_default_shipping', '-created_at')
+
+    def perform_create(self, serializer):
+        # Cakto userin e adresës të jetë përdoruesi i kyçur
+        serializer.save(user=self.request.user)
+
+    def perform_update(self, serializer):
+        # Sigurohu që useri nuk ndryshohet gjatë update, përveç nga admini
+        # Leja IsOwnerOrAdminOrReadOnly e trajton këtë në has_object_permission
+        # Nëse useri në payload është i ndryshëm dhe request.user nuk është admin, do të refuzohet.
+        # Por, për siguri, mund ta heqim userin nga validated_data nëse nuk është admin.
+        if not self.request.user.is_staff and 'user' in serializer.validated_data:
+            serializer.validated_data.pop('user')
+        serializer.save() # Useri nuk duhet të jetë pjesë e payload-it për update nga një user normal
+
+class CuisineTypeViewSet(viewsets.ModelViewSet):
+    """
+    Menaxhimi i Llojeve të Kuzhinave.
+    Adminët mund të krijojnë, modifikojnë, fshijnë llojet e kuzhinave.
+    Të gjithë përdoruesit (edhe anonimë) mund t'i listojnë dhe t'i shohin ato.
+    """
+    queryset = CuisineType.objects.all().order_by('name')
+    serializer_class = CuisineTypeSerializer
+    permission_classes = [IsAdminOrReadOnly] 
+
+    # @method_decorator(cache_page(60 * 15)) # Hiq këtë
+    def list(self, request, *args, **kwargs):
+        cache_key = cache_utils.get_cuisine_types_list_cache_key()
+        cached_data = cache.get(cache_key)
+
+        if cached_data:
+            print(f"Cache HIT for CuisineTypes: {cache_key}")
+            return Response(cached_data)
+        
+        print(f"Cache MISS for CuisineTypes: {cache_key}")
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        response_data = serializer.data
+        cache.set(cache_key, response_data, timeout=60 * 15) # Cache për 15 minuta
+        return Response(response_data)
+
+
+class RestaurantViewSet(viewsets.ModelViewSet):
+    """
+    Menaxhimi i Restoranteve.
+    - Liston restorantet aktive dhe të aprovuara për publikun.
+    - Pronarët e restoranteve mund të menaxhojnë restorantet e tyre.
+    - Adminët mund të menaxhojnë të gjitha restorantet dhe të aprovojnë restorantet e reja.
+    """
+    queryset = Restaurant.objects.all().select_related('owner', 'address').prefetch_related('cuisine_types', 'operating_hours')
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return RestaurantListSerializer
+        return RestaurantDetailSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        # Fillo me queryset-in bazë të viewset-it
+        queryset = self.queryset # Përdor queryset-in e definuar në klasë
+
+        if user.is_authenticated:
+            if user.is_staff: # Admini sheh gjithçka, por mund të filtrojë
+                name_filter = self.request.query_params.get('name__icontains')
+                approval_filter_str = self.request.query_params.get('is_approved')
+                activity_filter_str = self.request.query_params.get('is_active')
+                owner_filter = self.request.query_params.get('owner_id')
+
+                if name_filter:
+                    queryset = queryset.filter(name__icontains=name_filter)
+                if approval_filter_str is not None:
+                    is_approved_param = approval_filter_str.lower() == 'true'
+                    queryset = queryset.filter(is_approved=is_approved_param)
+                if activity_filter_str is not None:
+                    is_active_param = activity_filter_str.lower() == 'true'
+                    queryset = queryset.filter(is_active=is_active_param)
+                if owner_filter:
+                    queryset = queryset.filter(owner_id=owner_filter)
+                
+                return queryset.order_by('-is_approved', 'is_active', '-created_at')
+
+            if user.role == User.Role.RESTAURANT_OWNER:
+                # Pronari sheh restorantet e veta
+                return queryset.filter(owner=user).order_by('-created_at')
+        
+        # Përdoruesit e tjerë (klientë, anonimë) shohin vetëm aktivët dhe të aprovuarit
+        return queryset.filter(is_active=True, is_approved=True).order_by('name')
+
+    def get_permissions(self):
+        # 'log_page_view' duhet të jetë një action i definuar në këtë ViewSet
+        if self.action in ['list', 'retrieve', 'menu_items_for_restaurant', 'menu_categories_for_restaurant', 'log_page_view']:
+            return [permissions.AllowAny()]
+        
+        if self.action == 'create':
+            # Për të krijuar një restorant, duhet të jesh i kyçur dhe të kesh rolin e duhur
+            # ose të jesh admin. IsRestaurantOwnerOrAdmin do të kontrollojë këtë.
+            return [permissions.IsAuthenticated(), IsRestaurantOwnerOrAdmin()] 
+            
+        if self.action == 'approve_restaurant':
+            # Vetëm adminët mund të aprovojnë
+            return [permissions.IsAdminUser()]
+        
+        # Për veprimet e tjera si update, partial_update, destroy, toggle_active_status, etj.
+        return [permissions.IsAuthenticated(), IsRestaurantOwnerOrAdmin()]
+
+    # @method_decorator(cache_page(60 * 15)) # Hiq këtë
+    def list(self, request, *args, **kwargs):
+        # ----- FILLIMI I KODIT TE CACHE PER TA KOMENTUAR PERKOHESISHT -----
+        # user = request.user
+        # is_public_view_eligible_for_cache = not user.is_authenticated or user.role == User.Role.CUSTOMER
+
+        # cache_key = None
+        # if is_public_view_eligible_for_cache: 
+        #     cache_key = cache_utils.get_restaurants_list_public_cache_key(request)
+        #     cached_response_data = cache.get(cache_key)
+        #     if cached_response_data:
+        #         print(f"Cache HIT for Restaurants (public): {cache_key}")
+        #         return Response(cached_response_data)
+        #     print(f"Cache MISS for Restaurants (public): {cache_key}")
+        # ----- FUNDI I KODIT TE CACHE PER TA KOMENTUAR PERKOHESISHT -----
+
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            response = self.get_paginated_response(serializer.data)
+            # ----- FILLIMI I KODIT TE CACHE PER TA KOMENTUAR PERKOHESISHT -----
+            # if is_public_view_eligible_for_cache and cache_key:
+            #     cache.set(cache_key, response.data, timeout=cache_utils.RESTAURANT_LIST_CACHE_TTL) 
+            # ----- FUNDI I KODIT TE CACHE PER TA KOMENTUAR PERKOHESISHT -----
+            return response
+
+        serializer = self.get_serializer(queryset, many=True)
+        # ----- FILLIMI I KODIT TE CACHE PER TA KOMENTUAR PERKOHESISHT -----
+        # response_data = serializer.data
+        # if is_public_view_eligible_for_cache: 
+        #     all_items_cache_key = cache_utils.get_restaurants_list_public_all_items_cache_key()
+        #     cached_all_items = cache.get(all_items_cache_key)
+        #     if cached_all_items:
+        #         print(f"Cache HIT for Restaurants (public, all items): {all_items_cache_key}")
+        #         return Response(cached_all_items)
+            
+        #     print(f"Cache MISS for Restaurants (public, all items): {all_items_cache_key}")
+        #     cache.set(all_items_cache_key, response_data, timeout=cache_utils.RESTAURANT_LIST_CACHE_TTL)
+        # ----- FUNDI I KODIT TE CACHE PER TA KOMENTUAR PERKOHESISHT -----
+        return Response(serializer.data) # Sigurohu që kjo kthen serializer.data direkt
+
+    def perform_create(self, serializer):
+        # RestaurantDetailSerializer.create e trajton logjikën e caktimit të owner-it
+        # dhe statuset fillestare (is_approved, is_active) bazuar në rolin e userit.
+        # Ai përdor self.context['request'].user.
+        serializer.save()
+        # Invalido cache pas krijimit të një restoranti të ri
+        cache_utils.increment_restaurants_list_public_cache_version()
+
+
+    @action(detail=True, methods=['get'], url_path='menu-items', permission_classes=[permissions.AllowAny])
+    def menu_items_for_restaurant(self, request, pk=None):
+        restaurant = get_object_or_404(Restaurant, pk=pk, is_active=True, is_approved=True) # Vetëm nga restorantet publike
+        items = MenuItem.objects.filter(restaurant=restaurant, is_available=True).order_by('category__display_order', 'name')
+        serializer = MenuItemSerializer(items, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='menu-categories', permission_classes=[permissions.AllowAny])
+    def menu_categories_for_restaurant(self, request, pk=None):
+        restaurant = get_object_or_404(Restaurant, pk=pk, is_active=True, is_approved=True)
+        categories = MenuCategory.objects.filter(restaurant=restaurant).order_by('display_order', 'name')
+        # Përdor MenuCategorySerializer që i ka menu_items nested
+        serializer = MenuCategorySerializer(categories, many=True, context={'request': request})
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['patch'], url_path='approve', permission_classes=[permissions.IsAdminUser]) 
+    def approve_restaurant(self, request, pk=None):
+        """
+        Aprovon një restorant. Vetëm për Adminët.
+        Vendos `is_approved = True`. Mund të vendosë edhe `is_active = True` nëse dërgohet.
+        """
+        restaurant = self.get_object() 
+        
+        # Admini mund të dërgojë "make_active_on_approval": true/false në payload
+        make_active_str = request.data.get('make_active_on_approval', 'true') # Default e bën aktiv
+        make_active = str(make_active_str).lower() == 'true'
+
+        restaurant.is_approved = True
+        if make_active: # Bëje aktiv vetëm nëse kërkohet dhe është aprovuar
+            restaurant.is_active = True 
+        
+        restaurant.save()
+        # Invalido cache
+        cache_utils.increment_restaurants_list_public_cache_version()
+        cache_utils.invalidate_restaurant_detail_cache(restaurant.id)
+        return Response(RestaurantDetailSerializer(restaurant, context={'request': request}).data)
+        
+    @action(detail=True, methods=['patch'], url_path='toggle-active', permission_classes=[IsRestaurantOwnerOrAdmin])
+    def toggle_active_status(self, request, pk=None):
+        """
+        Ndryshon statusin aktiv/joaktiv të një restoranti.
+        Vetëm për pronarin e restorantit ose adminin.
+        Restoranti duhet të jetë i aprovuar për t'u bërë aktiv.
+        Mund të dërgohet `{"is_active": true/false}` në payload, ose do bëjë toggle.
+        """
+        restaurant = self.get_object() 
+
+        new_active_status_str = request.data.get('is_active')
+        if new_active_status_str is None: # Nëse nuk jepet, bëj toggle
+            new_is_active = not restaurant.is_active
+        else:
+            new_is_active = str(new_active_status_str).lower() == 'true'
+        
+        if not restaurant.is_approved and new_is_active is True:
+            return Response({"detail": "Restoranti duhet të aprovohet nga administratori para se të mund të aktivizohet."}, status=status.HTTP_400_BAD_REQUEST)
+
+        restaurant.is_active = new_is_active
+        restaurant.save()
+        # Invalido cache
+        cache_utils.increment_restaurants_list_public_cache_version()
+        cache_utils.invalidate_restaurant_detail_cache(restaurant.id)
+        return Response(RestaurantDetailSerializer(restaurant, context={'request': request}).data)
+
+    def perform_destroy(self, instance):
+        # Sigurohu që vetëm adminët mund të fshijnë
+        if not self.request.user.is_staff:
+            # Kjo duhet të jetë e mbuluar nga IsRestaurantOwnerOrAdmin në get_permissions
+            # por si një shtresë shtesë sigurie.
+            raise permissions.PermissionDenied("Vetëm administratorët mund të fshijnë restorante.")
+        
+        restaurant_id_for_cache = instance.id # Merr ID para fshirjes
+        super().perform_destroy(instance)
+        
+        # Invalido cache
+        cache_utils.increment_restaurants_list_public_cache_version()
+        cache_utils.invalidate_restaurant_detail_cache(restaurant_id_for_cache)
+
+    @action(detail=True, methods=['post'], url_path='log-view', permission_classes=[permissions.AllowAny])
+    def log_page_view(self, request, pk=None):
+        restaurant = get_object_or_404(Restaurant, pk=pk, is_active=True, is_approved=True)
+        
+        # Përdoruesi (mund të jetë anonim)
+        user = request.user if request.user.is_authenticated else None
+        
+        # IP Adresa
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip_address = x_forwarded_for.split(',')[0]
+        else:
+            ip_address = request.META.get('REMOTE_ADDR')
+            
+        # User Agent
+        user_agent = request.META.get('HTTP_USER_AGENT', '')
+
+        # Krijo log entry
+        PageViewLog.objects.create(
+            restaurant=restaurant,
+            user=user,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
+        return Response({"message": "Page view logged successfully."}, status=status.HTTP_201_CREATED)
+
+
+class OperatingHoursViewSet(viewsets.ModelViewSet):
+    """
+    Menaxhimi i Orarit të Punës për një restorant specifik (nested).
+    Lejon pronarët e restoranteve dhe adminët të menaxhojnë orarin.
+    Të tjerët mund ta lexojnë.
+    """
+    serializer_class = OperatingHoursSerializer
+    # Lejo pronarin e restorantit ose adminin të modifikojë, të tjerët lexojnë.
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsRestaurantOwnerOrAdmin]
+
+
+    def get_queryset(self):
+        restaurant_pk = self.kwargs.get('restaurant_pk')
+        if restaurant_pk:
+            # Sigurohu që restoranti ekziston
+            get_object_or_404(Restaurant, pk=restaurant_pk)
+            return OperatingHours.objects.filter(restaurant_id=restaurant_pk).order_by('day_of_week')
+        return OperatingHours.objects.none()
+
+    # def get_permissions(self):
+    #     # IsRestaurantOwnerOrAdmin do të trajtojë këtë.
+    #     # SAFE_METHODS lejohen nga IsRestaurantOwnerOrAdmin.
+    #     # Për shkrim, IsRestaurantOwnerOrAdmin kontrollon pronësinë e restaurant_pk ose admin statusin.
+    #     return [permissions.IsAuthenticated(), IsRestaurantOwnerOrAdmin()]
+
+    def perform_create(self, serializer):
+        restaurant_pk = self.kwargs.get('restaurant_pk')
+        restaurant = get_object_or_404(Restaurant, pk=restaurant_pk)
+        
+        # Kontrolli për duplikim të ditës së javës bëhet nga unique_together në model.
+        # Mund të shtosh validim shtesë këtu ose në serializer për mesazhe më të mira.
+        # if OperatingHours.objects.filter(restaurant=restaurant, day_of_week=serializer.validated_data['day_of_week']).exists():
+        #     raise serializers.ValidationError({"day_of_week": "Orari për këtë ditë tashmë ekziston."})
+            
+        serializer.save(restaurant=restaurant)
+
+class MenuCategoryViewSet(viewsets.ModelViewSet):
+    """
+    Menaxhimi i Kategorive të Menusë për një restorant specifik (nested).
+    Lejon pronarët e restoranteve dhe adminët të menaxhojnë kategoritë.
+    Të tjerët mund t'i lexojnë.
+    """
+    serializer_class = MenuCategorySerializer
+    # Lejo pronarin e restorantit ose adminin të modifikojë, të tjerët lexojnë.
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsRestaurantOwnerOrAdmin]
+
+    def get_queryset(self):
+        restaurant_pk = self.kwargs.get('restaurant_pk') # Supozon nested route
+        if restaurant_pk:
+            # Leja IsRestaurantOwnerOrAdmin te has_permission duhet të verifikojë pronësinë e restorantit
+            return MenuCategory.objects.filter(restaurant_id=restaurant_pk).order_by('display_order', 'name')
+        # Nëse nuk është nested route, admini mund të shohë të gjitha, ose filtro sipas restoranteve të userit
+        elif self.request.user.is_staff:
+            return MenuCategory.objects.all().order_by('restaurant__name', 'display_order')
+        elif self.request.user.is_authenticated and self.request.user.role == User.Role.RESTAURANT_OWNER:
+             return MenuCategory.objects.filter(restaurant__owner=self.request.user).order_by('restaurant__name', 'display_order')
+        return MenuCategory.objects.none()
+
+    def perform_create(self, serializer):
+        restaurant_pk = self.kwargs.get('restaurant_pk')
+        restaurant = get_object_or_404(Restaurant, pk=restaurant_pk)
+        # Leja IsRestaurantOwnerOrAdmin te has_permission duhet ta ketë kontrolluar këtë tashmë
+        serializer.save(restaurant=restaurant)
+
+class MenuItemViewSet(viewsets.ModelViewSet):
+    serializer_class = MenuItemSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly] # Default
+
+    def get_queryset(self):
+        restaurant_pk = self.kwargs.get('restaurant_pk')
+        category_pk = self.kwargs.get('category_pk') # Opsionale, nëse do të filtrosh edhe sipas kategorisë
+
+        if restaurant_pk:
+            qs = MenuItem.objects.filter(restaurant_id=restaurant_pk)
+            if category_pk:
+                qs = qs.filter(category_id=category_pk)
+            return qs.order_by('category__display_order', 'name')
+        # Logjika për adminin ose pronarin nëse nuk është nested
+        elif self.request.user.is_staff:
+            return MenuItem.objects.all().order_by('restaurant__name', 'category__display_order')
+        elif self.request.user.is_authenticated and self.request.user.role == User.Role.RESTAURANT_OWNER:
+             return MenuItem.objects.filter(restaurant__owner=self.request.user).order_by('restaurant__name', 'category__display_order')
+        return MenuItem.objects.none()
+
+    def perform_create(self, serializer):
+        restaurant_pk = self.kwargs.get('restaurant_pk')
+        restaurant = get_object_or_404(Restaurant, pk=restaurant_pk)
+        
+        # Kategoria merret nga validated_data e serializerit
+        category = serializer.validated_data.get('category')
+        if category.restaurant != restaurant: # Sigurohu që kategoria i përket restorantit të duhur
+            raise permissions.ValidationError("Kategoria e zgjedhur nuk i përket këtij restoranti.")
+        
+        serializer.save(restaurant=restaurant) # Serializeri tashmë e ka kategorinë
+        
+    def perform_update(self, serializer):
+        restaurant = serializer.instance.restaurant # Merr restorantin nga instanca ekzistuese
+        if 'category' in serializer.validated_data:
+            new_category = serializer.validated_data.get('category')
+            if new_category.restaurant != restaurant:
+                 raise permissions.ValidationError("Kategoria e re nuk i përket këtij restoranti.")
+        serializer.save()
+
+
+# === VIEWSET PËR SHPORTËN ===
+class CartViewSet(viewsets.GenericViewSet): # Përdorim GenericViewSet për më shumë kontroll
+    serializer_class = CartSerializer
+    permission_classes = [permissions.IsAuthenticated] # Vetëm përdoruesit e kyçur
+
+    def get_cart_object(self, request):
+        # Merr ose krijo shportën për përdoruesin e kyçur
+        cart, created = Cart.objects.get_or_create(user=request.user)
+        return cart
+
+    @action(detail=False, methods=['get'], url_path='my-cart')
+    def my_cart(self, request):
+        """Kthen shportën aktuale të përdoruesit."""
+        cart = self.get_cart_object(request)
+        serializer = self.get_serializer(cart)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='add-item')
+    def add_item(self, request):
+        """Shton një artikull në shportë ose përditëson sasinë nëse ekziston."""
+        cart = self.get_cart_object(request)
+        menu_item_id = request.data.get('menu_item_id')
+        quantity = int(request.data.get('quantity', 1))
+
+        if not menu_item_id:
+            return Response({"detail": "menu_item_id kërkohet."}, status=status.HTTP_400_BAD_REQUEST)
+        if quantity <= 0:
+            return Response({"detail": "Sasia duhet të jetë pozitive."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            menu_item = MenuItem.objects.get(id=menu_item_id, is_available=True)
+        except MenuItem.DoesNotExist:
+            return Response({"detail": "Artikulli i menusë nuk u gjet ose nuk është i disponueshëm."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Kontrollo nëse shporta është bosh ose nëse artikulli i ri është nga i njëjti restorant
+        if cart.restaurant and cart.restaurant != menu_item.restaurant:
+            return Response({
+                "detail": "Nuk mund të shtoni artikuj nga restorante të ndryshme në të njëjtën shportë. Ju lutem pastroni shportën aktuale ose përfundoni porosinë para se të shtoni nga një restorant tjetër.",
+                "current_cart_restaurant_id": cart.restaurant.id,
+                "new_item_restaurant_id": menu_item.restaurant.id
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not cart.restaurant: # Nëse shporta ishte bosh, cakto restorantin
+            cart.restaurant = menu_item.restaurant
+            cart.save()
+
+        cart_item, created = CartItem.objects.get_or_create(
+            cart=cart, 
+            menu_item=menu_item,
+            defaults={'quantity': quantity}
+        )
+
+        if not created: # Nëse artikulli ekzistonte, shto sasinë
+            cart_item.quantity += quantity
+            cart_item.save()
+        
+        serializer = self.get_serializer(cart) # Kthe shportën e përditësuar
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['patch'], url_path='items/(?P<item_pk>[^/.]+)/update-quantity', serializer_class=CartItemSerializer) 
+    def update_item_quantity(self, request, item_pk=None): 
+        cart = self.get_cart_object(request)
+        quantity_str = request.data.get('quantity')
+
+        if quantity_str is None:
+            return Response({"detail": "Sasia kërkohet."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            quantity = int(quantity_str)
+            if quantity <= 0:
+                raise ValueError("Sasia duhet të jetë pozitive.")
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            cart_item = CartItem.objects.get(id=item_pk, cart=cart)
+        except CartItem.DoesNotExist:
+            return Response({"detail": "Artikulli nuk u gjet në shportë."}, status=status.HTTP_404_NOT_FOUND)
+        
+        cart_item.quantity = quantity
+        cart_item.save()
+        
+        cart_serializer = self.get_serializer(cart) # Kthe shportën e plotë
+        return Response(cart_serializer.data)
+
+    @action(detail=False, methods=['delete'], url_path='items/(?P<item_pk>[^/.]+)/remove') 
+    def remove_item(self, request, item_pk=None):
+        cart = self.get_cart_object(request)
+        try:
+            cart_item = CartItem.objects.get(id=item_pk, cart=cart)
+            cart_item.delete()
+            
+            # Nëse shporta mbetet bosh pas fshirjes, hiq lidhjen me restorantin
+            if not cart.items.exists():
+                cart.restaurant = None
+                cart.save()
+
+        except CartItem.DoesNotExist:
+            return Response({"detail": "Artikulli nuk u gjet në shportë."}, status=status.HTTP_404_NOT_FOUND)
+        
+        serializer = self.get_serializer(cart) # Kthe shportën e plotë
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['delete'], url_path='clear')
+    def clear_cart(self, request):
+        """Fshin të gjithë artikujt nga shporta e përdoruesit."""
+        cart = self.get_cart_object(request)
+        cart.items.all().delete()
+        cart.restaurant = None # Pastro restorantin
+        cart.save()
+        serializer = self.get_serializer(cart)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+# === FUNDI I VIEWSET PËR SHPORTËN ===
+
+
+class OrderViewSet(viewsets.ModelViewSet):
+    queryset = Order.objects.all().select_related(
+        'customer', 'restaurant', 'driver'
+    ).prefetch_related(
+        'items__menu_item' # Për të optimizuar query-n kur merren artikujt
+    )
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return OrderListSerializer
+        return OrderDetailSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_authenticated:
+            return Order.objects.none()
+
+        if user.is_staff: # Admin sheh gjithçka
+            # Mund të shtosh filtra nga query params këtu për adminin
+            # p.sh., ?restaurant_id=X ose ?customer_id=Y
+            restaurant_id_filter = self.request.query_params.get('restaurant_id')
+            if restaurant_id_filter:
+                return Order.objects.filter(restaurant_id=restaurant_id_filter).order_by('-created_at')
+            return Order.objects.all().order_by('-created_at')
+            
+        elif user.role == User.Role.CUSTOMER:
+            return Order.objects.filter(customer=user).order_by('-created_at')
+            
+        elif user.role == User.Role.RESTAURANT_OWNER:
+            # Pronari sheh vetëm porositë për restorantet e tij
+            # Nëse një pronar ka shumë restorante, mund të filtrosh sipas një ID specifike të restorantit
+            # nga query params, por për fillim, le të shohë të gjitha të tijat.
+            # Modifikoje këtë nëse RestaurantOwnerLayout në frontend dërgon gjithmonë ID-në e restorantit aktual.
+            restaurant_id_filter = self.request.query_params.get('restaurant_id')
+            if restaurant_id_filter:
+                 # Sigurohu që pronari ka akses te ky restorant
+                return Order.objects.filter(restaurant_id=restaurant_id_filter, restaurant__owner=user).order_by('-created_at')
+            
+            # Nëse nuk ka restaurant_id_filter, kthe porositë për të gjitha restorantet e pronarit
+            return Order.objects.filter(restaurant__owner=user).order_by('-created_at')
+            
+        elif user.role == User.Role.DRIVER: # Ose User.Role.DELIVERY_PERSONNEL
+            # Shoferi sheh porositë e tij aktive ose historikun (mund të filtrosh më tej)
+            status_filter = self.request.query_params.get('status__in')
+            if status_filter:
+                statuses = status_filter.split(',')
+                return Order.objects.filter(driver=user, status__in=statuses).order_by('-created_at')
+            return Order.objects.filter(driver=user).order_by('-created_at')
+            
+        return Order.objects.none()
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [permissions.IsAuthenticated(), IsCustomer()]
+        # Për `update_status_restaurant`, leja vendoset te vetë action-i.
+        # Për `update_status_driver`, leja vendoset te vetë action-i.
+        # Për `accept_delivery`, leja vendoset te vetë action-i.
+        # Për `available_for_driver`, leja vendoset te vetë action-i.
+        # Për `my_active_delivery`, leja vendoset te vetë action-i.
+        if self.action == 'destroy': # Vetëm admini mund të fshijë porosi
+            return [permissions.IsAdminUser()]
+        
+        # Për `list`, `retrieve` (metoda SAFE_METHODS)
+        if self.request.method in permissions.SAFE_METHODS:
+            return [permissions.IsAuthenticated()] # get_queryset do të bëjë filtrimin e duhur bazuar në rol
+
+        # Për `update`, `partial_update` standarde (që nuk janë actions specifike)
+        # Këto duhet të jenë shumë të kufizuara. Zakonisht vetëm admini.
+        # Serializer.update() ka gjithashtu logjikë për të limituar fushat.
+        if self.action in ['update', 'partial_update']:
+             return [permissions.IsAdminUser()] # Ose një leje më specifike nëse nevojitet
+             
+        return super().get_permissions() # Fallback te lejet default të ViewSet-it (IsAuthenticated)
+
+    def perform_create(self, serializer):
+        # Logjika e krijimit të porosisë është te OrderDetailSerializer.create
+        # Ai tashmë e merr customer-in nga request.user dhe pastron shportën.
+        # Restoranti dhe adresa e dërgesës vijnë nga payload-i.
+        serializer.save() 
+
+
+    @action(detail=True, methods=['patch'], url_path='update-status-restaurant', 
+            permission_classes=[permissions.IsAuthenticated, IsRestaurantOwnerOrAdmin])
+    def update_status_restaurant(self, request, pk=None):
+        order = self.get_object() # get_object do të përdorë queryset-in e viewset-it dhe lejet e objektit
+
+        # Sigurohu që useri që bën kërkesën është pronari i restorantit të kësaj porosie
+        # IsRestaurantOwnerOrAdmin e bën këtë te has_object_permission
+        # self.check_object_permissions(request, order) # Thërret has_object_permission eksplicitikisht
+
+        new_status = request.data.get('status')
+        
+        # Statuset që restoranti mund t'i vendosë
+        allowed_statuses_for_restaurant = [
+            Order.OrderStatus.CONFIRMED, 
+            Order.OrderStatus.PREPARING, 
+            Order.OrderStatus.READY_FOR_PICKUP, 
+            Order.OrderStatus.CANCELLED_BY_RESTAURANT
+        ]
+
+        # Logjika e tranzicionit të statusit (shembull bazik)
+        # Mund ta bësh më të sofistikuar me një state machine
+        current_status = order.status
+        valid_transition = False
+
+        if current_status == Order.OrderStatus.PENDING and new_status in [Order.OrderStatus.CONFIRMED, Order.OrderStatus.CANCELLED_BY_RESTAURANT]:
+            valid_transition = True
+        elif current_status == Order.OrderStatus.CONFIRMED and new_status in [Order.OrderStatus.PREPARING, Order.OrderStatus.CANCELLED_BY_RESTAURANT]:
+            valid_transition = True
+        elif current_status == Order.OrderStatus.PREPARING and new_status == Order.OrderStatus.READY_FOR_PICKUP:
+            valid_transition = True
+        # Lejo anulimin nga restoranti në disa faza të hershme
+        elif current_status in [Order.OrderStatus.PENDING, Order.OrderStatus.CONFIRMED, Order.OrderStatus.PREPARING] and new_status == Order.OrderStatus.CANCELLED_BY_RESTAURANT:
+             valid_transition = True
+        
+        # Mos lejo ndryshimin nëse porosia është marrë nga shoferi ose është finale
+        if current_status in [Order.OrderStatus.ON_THE_WAY, Order.OrderStatus.DELIVERED, Order.OrderStatus.FAILED_DELIVERY, Order.OrderStatus.CANCELLED_BY_USER]:
+            return Response({"detail": f"Statusi i porosisë nuk mund të ndryshohet nga restoranti pasi është '{order.get_status_display()}'."}, 
+                            status=status.HTTP_400_BAD_REQUEST)
+
+
+        if not valid_transition and new_status in allowed_statuses_for_restaurant:
+            # Nëse statusi i ri është i lejuar për restorantin, por nuk është tranzicion valid nga statusi aktual
+            # kthe një gabim më specifik
+             return Response({"detail": f"Nuk mund të kalohet nga statusi '{current_status}' direkt në '{new_status}' nga restoranti."}, status=status.HTTP_400_BAD_REQUEST)
+        elif new_status not in allowed_statuses_for_restaurant:
+            return Response({"detail": f"Statusi '{new_status}' nuk është valid ose nuk lejohet të vendoset nga restoranti."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        order.status = new_status
+        # Thirr metodën save të modelit Order për të përditësuar kohët e statusit
+        order.save() 
+        
+        # KËTU MUND TË SHTOSH DËRGIMIN E NJË SINJALI OSE NJË TASKU CELERY PËR TË NJOFGUAR KLIENTIN/SHOFERIN
+        
+        return Response(OrderDetailSerializer(order, context={'request': request}).data)
+
+    @action(detail=True, methods=['patch'], url_path='accept-delivery', permission_classes=[permissions.IsAuthenticated, IsDriverPermission])
+    def accept_delivery(self, request, pk=None):
+        """
+        Lejon një shofer të pranojë një porosi që është 'READY_FOR_PICKUP' dhe nuk ka shofer.
+        Shoferi nuk duhet të ketë një dërgesë tjetër aktive.
+        Statusi i porosisë ndryshohet në 'CONFIRMED'.
+        """
+        order = get_object_or_404(Order, pk=pk)
+        user = request.user # Ky është shoferi potencial
+        
+        # if not user.is_available_for_delivery: # Kjo duhet të jetë pjesë e logjikës së shoferit, jo kusht për pranim
+        #     return Response({"detail": "Duhet të jeni online për të pranuar dërgesa."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if order.driver is not None: 
+            return Response({"detail": "Kjo porosi tashmë ka një shofer të caktuar."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if order.status != Order.OrderStatus.READY_FOR_PICKUP: 
+            return Response({"detail": "Kjo porosi nuk është gati për dërgesë."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Kontrollo nëse shoferi ka tashmë një dërgesë aktive
+        active_statuses_for_driver = [Order.OrderStatus.CONFIRMED, Order.OrderStatus.ON_THE_WAY]
+        if Order.objects.filter(driver=user, status__in=active_statuses_for_driver).exists():
+            return Response({"detail": "Ju tashmë keni një dërgesë aktive."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        order.driver = user
+        order.status = Order.OrderStatus.CONFIRMED # Kur shoferi pranon, statusi bëhet 'CONFIRMED' nga shoferi
+        order.save()
+
+        # Invalido cache
+        cache_utils.invalidate_cache_for_user_orders(order.customer)
+        if order.restaurant and order.restaurant.owner:
+            cache_utils.invalidate_cache_for_user_orders(order.restaurant.owner)
+        cache_utils.invalidate_cache_for_user_orders(request.user) # Shoferi
+
+        return Response(OrderDetailSerializer(order, context={'request': request}).data)
+
+    @action(detail=True, methods=['patch'], url_path='update-status/driver', permission_classes=[permissions.IsAuthenticated, IsDriverOfOrderPermission])
+    def update_status_driver(self, request, pk=None):
+        """
+        Lejon shoferin e caktuar të përditësojë statusin e një porosie.
+        Tranzicionet e lejuara:
+        - Nga CONFIRMED -> ON_THE_WAY
+        - Nga ON_THE_WAY -> DELIVERED ose FAILED_DELIVERY
+        """
+        order = self.get_object() 
+        new_status = request.data.get('status')
+        
+        allowed_statuses_by_driver = [Order.OrderStatus.ON_THE_WAY, Order.OrderStatus.DELIVERED, Order.OrderStatus.FAILED_DELIVERY]
+        
+        if new_status not in allowed_statuses_by_driver: 
+            return Response({"detail": f"Status invalid. Statuset e lejuara nga shoferi janë: {', '.join(allowed_statuses_by_driver)}"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Logjikë për tranzicionet e statusit
+        if order.status == Order.OrderStatus.CONFIRMED and new_status != Order.OrderStatus.ON_THE_WAY:
+            return Response({"detail": "Nga statusi 'CONFIRMED', hapi tjetër i lejuar është 'ON_THE_WAY'."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if order.status == Order.OrderStatus.ON_THE_WAY and new_status not in [Order.OrderStatus.DELIVERED, Order.OrderStatus.FAILED_DELIVERY]:
+            return Response({"detail": "Nga statusi 'ON_THE_WAY', hapat e tjerë të lejuar janë 'DELIVERED' ose 'FAILED_DELIVERY'."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Parandalo ndryshimin e statusit nëse porosia tashmë është në një status final (p.sh., DELIVERED, CANCELLED)
+        if order.status in [Order.OrderStatus.DELIVERED, Order.OrderStatus.CANCELLED_BY_CUSTOMER, Order.OrderStatus.CANCELLED_BY_RESTAURANT, Order.OrderStatus.FAILED_DELIVERY]:
+             return Response({"detail": f"Porosia tashmë është në statusin '{order.get_status_display()}' dhe nuk mund të ndryshohet më tej nga shoferi."}, status=status.HTTP_400_BAD_REQUEST)
+
+        order.status = new_status
+        if new_status == Order.OrderStatus.DELIVERED:
+            order.actual_delivery_time = timezone.now()
+            if order.payment_method == Order.PaymentMethod.CASH_ON_DELIVERY:
+                order.payment_status = Order.PaymentStatus.PAID
+        order.save()
+
+        # Invalido cache
+        cache_utils.invalidate_cache_for_user_orders(order.customer)
+        if order.restaurant and order.restaurant.owner:
+            cache_utils.invalidate_cache_for_user_orders(order.restaurant.owner)
+        cache_utils.invalidate_cache_for_user_orders(request.user) # Shoferi
+
+        return Response(OrderDetailSerializer(order, context={'request': request}).data)
+    
+    @action(detail=False, methods=['get'], url_path='my-active-delivery', permission_classes=[permissions.IsAuthenticated, IsDriverPermission])
+    def my_active_delivery(self, request):
+        """
+        Kthen porosinë aktive aktuale për shoferin e kyçur.
+        Një porosi konsiderohet aktive për shoferin nëse statusi është CONFIRMED, ON_THE_WAY, ose PREPARING.
+        """
+        user = request.user
+        active_statuses = [Order.OrderStatus.CONFIRMED, Order.OrderStatus.ON_THE_WAY, Order.OrderStatus.PREPARING] # Shoferi mund ta shohë edhe kur është PREPARING
+        active_order = Order.objects.filter(driver=user, status__in=active_statuses).first()
+        if active_order:
+            serializer = OrderDetailSerializer(active_order, context={'request': request})
+            return Response(serializer.data)
+        return Response(None, status=status.HTTP_200_OK) 
+
+class ReviewViewSet(viewsets.ModelViewSet):
+    serializer_class = ReviewSerializer
+    # permission_classes = [permissions.IsAuthenticatedOrReadOnly] # Default
+
+    def get_queryset(self):
+        # Kthe vlerësimet vetëm për restorantin e specifikuar në URL
+        restaurant_pk = self.kwargs.get('restaurant_pk')
+        if restaurant_pk:
+            return Review.objects.filter(restaurant_id=restaurant_pk)
+        return Review.objects.none() # Ose hidh një gabim nëse nuk pritet të aksesohet pa restaurant_pk
+
+    def get_permissions(self):
+        if self.action == 'create':
+            # Vetëm përdoruesit e kyçur (dhe idealisht klientë që kanë porositur) mund të krijojnë
+            # Për fillim, vetëm IsAuthenticated. Mund të shtosh IsCustomer.
+            self.permission_classes = [permissions.IsAuthenticated] 
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            self.permission_classes = [IsAuthorOrAdminOrReadOnly]
+        else: # list, retrieve
+            self.permission_classes = [permissions.AllowAny] # Ose IsAuthenticatedOrReadOnly
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        restaurant_pk = self.kwargs.get('restaurant_pk')
+        restaurant = get_object_or_404(Restaurant, pk=restaurant_pk)
+        
+        # Kontrolli nëse përdoruesi tashmë ka lënë vlerësim bëhet te serializeri
+        # ose nga unique_together në model.
+
+        # Këtu mund të shtosh logjikën për të kontrolluar nëse përdoruesi ka porositur nga ky restorant
+        # if not Order.objects.filter(customer=self.request.user, restaurant=restaurant, status=Order.Status.DELIVERED).exists():
+        #     raise permissions.PermissionDenied("Ju mund të vlerësoni vetëm restorantet nga të cilat keni porositur.")
+
+        serializer.save(user=self.request.user, restaurant=restaurant)
+
+    def perform_update(self, serializer):
+        # Sigurohu që useri nuk po ndryshon restorantin ose përdoruesin e review-së
+        # Kjo zakonisht bëhet duke i bërë ato fusha read_only në serializer për update
+        # ose duke i hequr nga validated_data para se të thirret super().perform_update()
+        review = serializer.instance
+        serializer.save(user=self.request.user) # Ruaj vetëm fushat e lejuara
+        # Invalido cache për listën e restoranteve pasi mund të ndryshojë average_rating
+        cache_utils.invalidate_restaurant_list_cache()
+        cache_utils.invalidate_restaurant_detail_cache(review.restaurant.id)
+    
+    def perform_destroy(self, instance):
+        restaurant_pk = instance.restaurant.id
+        instance.delete()
+        # Invalido cache për listën e restoranteve pasi mund të ndryshojë average_rating
+        cache_utils.invalidate_restaurant_list_cache()
+        cache_utils.invalidate_restaurant_detail_cache(restaurant_pk)
+
+
+class ReviewReplyViewSet(viewsets.ModelViewSet):
+    """
+    Menaxhimi i Përgjigjeve të Vlerësimeve.
+    - Adminët dhe autorët e përgjigjeve mund t'i menaxhojnë ato.
+    - Të gjithë mund t'i lexojnë përgjigjet.
+    """
+    serializer_class = ReviewReplySerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_queryset(self):
+        # Kthe përgjigjet vetëm për vlerësimin e specifikuar në URL
+        review_pk = self.kwargs.get('review_pk')
+        if review_pk:
+            return ReviewReply.objects.filter(review_id=review_pk)
+        return ReviewReply.objects.none() # Ose hidh një gabim nëse nuk pritet të aksesohet pa review_pk
+
+    def perform_create(self, serializer):
+        review_pk = self.kwargs.get('review_pk')
+        review = get_object_or_404(Review, pk=review_pk)
+        serializer.save(user=self.request.user, review=review)
+
+    def perform_update(self, serializer):
+        # Sigurohu që përdoruesi nuk ndryshon vlerësimin ose përdoruesin e përgjigjes
+        serializer.save(user=self.request.user) # Autori mbetet i njëjti
+
+    # Nuk ka nevojë për perform_destroy të personalizuar zakonisht
+
+
+class DriverProfileViewSet(viewsets.ModelViewSet):
+    queryset = DriverProfile.objects.select_related('user').all()
+    serializer_class = DriverProfileSerializer
+    permission_classes = [permissions.IsAuthenticated, IsDriverProfileOwnerOrAdmin] # Rregullo sipas nevojës
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            return DriverProfile.objects.all()
+        if user.role == User.Role.DRIVER:
+            return DriverProfile.objects.filter(user=user)
+        return DriverProfile.objects.none()
+
+    def perform_create(self, serializer):
+        # Sigurohemi që useri i dhënë në payload (nëse lejohet) është i njëjti me userin e kyçur,
+        # përveç nëse është admin.
+        # Ose, më mirë, cakto userin automatikisht bazuar te request.user nëse nuk është admin.
+        user_to_assign = serializer.validated_data.get('user')
+        
+        if not self.request.user.is_staff and user_to_assign != self.request.user:
+            raise permissions.PermissionDenied("Ju mund të krijoni profil vetëm për veten tuaj.")
+
+        if user_to_assign.role != User.Role.DRIVER:
+             raise serializers.ValidationError({"user": "Përdoruesi i zgjedhur duhet të ketë rolin 'DRIVER'."})
+        
+        # Kontrolli për ekzistencën e profilit bëhet nga OneToOneField ose nga validimi i serializerit.
+        serializer.save() # user është pjesë e validated_data nga serializeri
+
+    def perform_update(self, serializer):
+        # Useri nuk duhet të ndryshohet gjatë update.
+        # Kjo sigurohet nga fakti që 'user' është primary_key dhe read_only pas krijimit,
+        # ose nga logjika e lejeve.
+        serializer.save()
+
+
+
+# End of File: api/views.py
+#------------------------------------------------------------------------------
+
+# File: food_delivery_project/__init__.py
+
+
+
+# End of File: food_delivery_project/__init__.py
+#------------------------------------------------------------------------------
+
+# File: food_delivery_project/asgi.py
+
+"""
+ASGI config for food_delivery_project project.
+
+It exposes the ASGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/5.2/howto/deployment/asgi/
+"""
+
+import os
+
+from django.core.asgi import get_asgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'food_delivery_project.settings')
+
+application = get_asgi_application()
+
+
+# End of File: food_delivery_project/asgi.py
+#------------------------------------------------------------------------------
+
+# File: food_delivery_project/settings.py
+
+# backend/food_delivery_project/settings.py
+
+from pathlib import Path
+from datetime import timedelta
+# import os # Nëse do të përdorësh python-dotenv dhe os.getenv
+# from dotenv import load_dotenv # Nëse do të përdorësh python-dotenv
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Nëse përdor python-dotenv, ngarkoje këtu
+# load_dotenv(BASE_DIR / '.env') # Supozon që .env është në folderin rrënjë 'backend/'
+
+# SECURITY WARNING: keep the secret key used in production secret!
+# SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'gjenero-nje-secret-key-te-forte-dhe-vendose-te-.env')
+SECRET_KEY = 'django-insecure-4_yr$us$07t0!6n$43rjxg97!76b2(u6ih(_5pafubnxc0q_+5' # Për zhvillim është OK
+
+# SECURITY WARNING: don't run with debug turned on in production!
+# DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
+DEBUG = True # Për zhvillim
+
+# ALLOWED_HOSTS_STRING = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1')
+# ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STRING.split(',') if host.strip()]
+ALLOWED_HOSTS = [] # Për zhvillim lokal, mund ta lësh bosh ose ['localhost', '127.0.0.1']
+
+
+# Application definition
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    # Third-party apps
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'rest_framework_nested', # Sigurohu që ky rresht është këtu
+    'corsheaders',
+    'drf_yasg', # Shto drf-yasg
+    # Your apps
+    'api.apps.ApiConfig', # Ose thjesht 'api' nëse nuk keni modifikuar apps.py më parë
+]
+
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # Sa më lart të jetë e mundur
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+ROOT_URLCONF = 'food_delivery_project.urls' # Sigurohu që emri i projektit është korrekt
+
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [], # Mund të shtosh BASE_DIR / 'templates' nëse ke templates globale
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = 'food_delivery_project.wsgi.application' # Sigurohu emrin e projektit
+
+# Database
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'food_delivery_db',     # Emri i databazës tënde
+        'USER': 'shpatmjeku',           # Përdoruesi yt i PostgreSQL
+        'PASSWORD': '',                 # Fjalëkalimi (bosh nëse nuk ka)
+        'HOST': 'localhost',            # Ose '127.0.0.1'
+        'PORT': '5432',                 # Porti standard
+    }
+}
+
+# Modeli i personalizuar i përdoruesit
+AUTH_USER_MODEL = 'api.User' # Ky duhet të jetë këtu para migrimit të parë me modelin User
+
+# Password validation
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',},
+]
+
+# Internationalization
+LANGUAGE_CODE = 'en-us' # Mund ta ndryshosh në 'sq' më vonë nëse do përkthime
+TIME_ZONE = 'UTC' # Ose 'Europe/Tirane'
+USE_I18N = True
+USE_TZ = True
+
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/4.0/howto/static-files/
+
+STATIC_URL = 'static/'
+# STATIC_ROOT = BASE_DIR / 'staticfiles' # Për deployment
+
+# Default primary key field type
+# https://docs.djangoproject.com/en/4.0/ref/settings/#default-auto-field
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Media files configuration
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Caching Configuration
+# For a basic setup, we'll use local memory caching.
+# For production, consider using Redis or Memcached.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake', # Emër unik për këtë instancë cache
+    }
+}
+
+# Optional: Cache middleware settings (if you plan to use site-wide or template caching via middleware)
+# CACHE_MIDDLEWARE_ALIAS = 'default'
+# CACHE_MIDDLEWARE_SECONDS = 60 * 15 # 15 minuta
+# CACHE_MIDDLEWARE_KEY_PREFIX = ''
+
+# Django REST Framework Settings
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # Mund të shtosh 'rest_framework.authentication.SessionAuthentication' nëse do edhe browsable API login
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated', # Default: kërkon autentikim për shumicën e endpoints
+    ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10, # Shembull page size
+    # 'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema', # Nëse do të përdorje drf-spectacular
+}
+
+# Simple JWT Settings
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60), 
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),   
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True, # Kërkon 'rest_framework_simplejwt.token_blacklist'
+    "UPDATE_LAST_LOGIN": True,
+    
+    "ALGORITHM": "HS256",
+    # "SIGNING_KEY": SECRET_KEY, # Default është SECRET_KEY
+    "VERIFYING_KEY": "",
+    "AUDIENCE": None,
+    "ISSUER": None,
+    "JSON_ENCODER": None,
+    "JWK_URL": None,
+    "LEEWAY": 0,
+    
+    "AUTH_HEADER_TYPES": ("Bearer",), # Standard
+    "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
+    "USER_ID_FIELD": "id", # Supozon që modeli User ka fushën 'id' si primary key
+    "USER_ID_CLAIM": "user_id",
+    "USER_AUTHENTICATION_RULE": "rest_framework_simplejwt.authentication.default_user_authentication_rule",
+    
+    "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
+    "TOKEN_TYPE_CLAIM": "token_type",
+    "TOKEN_USER_CLASS": "rest_framework_simplejwt.models.TokenUser",
+    
+    "JTI_CLAIM": "jti",
+    
+    "SLIDING_TOKEN_REFRESH_EXP_CLAIM": "refresh_exp",
+    "SLIDING_TOKEN_LIFETIME": timedelta(minutes=5), # Nuk përdoret nëse ROTATE_REFRESH_TOKENS=True
+    "SLIDING_TOKEN_REFRESH_LIFETIME": timedelta(days=1), # Nuk përdoret nëse ROTATE_REFRESH_TOKENS=True
+}
+
+# CORS Settings
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173", # Adresa e frontend-it tënd React
+    "http://127.0.0.1:5173",
+]
+# Për më shumë fleksibilitet gjatë zhvillimit, mund të përdorësh:
+# CORS_ALLOW_ALL_ORIGINS = True # KUJDES: Vetëm për zhvillim, jo për produksion!
+# Ose CORS_ALLOW_CREDENTIALS = True dhe CORS_ALLOWED_ORIGIN_REGEXES
+
+# drf-yasg (Swagger) Settings
+SWAGGER_SETTINGS = {
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header',
+            'description': "Shkruaj 'Bearer ' pasuar nga token-i yt JWT (p.sh., Bearer eyJhbGci...)."
+        }
+    },
+    'USE_SESSION_AUTH': False, # E rëndësishme për API me token
+    'SHOW_REQUEST_HEADERS': True,
+    'PERSIST_AUTH': True, # Ruan autorizimin në Swagger UI ndërmjet rifreskimeve
+    'DEFAULT_INFO': 'food_delivery_project.urls.api_info', # Nëse do të definosh info më të detajuar te urls.py
+    'REFETCH_SCHEMA_WITH_AUTH': True, # Mund të ndihmojë
+    'REFETCH_SCHEMA_ON_LOGOUT': True, # Mund të ndihmojë
+}
+# LOGIN_URL = 'rest_framework:login' # Nuk është e nevojshme për API me token kur përdor Swagger
+# LOGOUT_URL = 'rest_framework:logout'
+
+# End of File: food_delivery_project/settings.py
+#------------------------------------------------------------------------------
+
+# File: food_delivery_project/urls.py
+
+"""food_delivery_project URL Configuration
+
+The `urlpatterns` list routes URLs to views. For more information please see:
+    https://docs.djangoproject.com/en/4.0/topics/http/urls/
+
+Examples:
+Function views
+    1. Add an import:  from my_app import views
+    2. Add a URL to urlpatterns:  path('my-view/', views.my_view, name='my_view')
+Class-based views
+    1. Add an import:  from other_app.views import MyView
+    2. Add a URL to urlpatterns:  path('my-view/', MyView.as_view(), name='my_view')
+Including another URLconf
+    1. Import the include() function: from django.urls import include, path
+    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
+
+"""
+from django.contrib import admin
+from django.urls import path, include, re_path # Shto re_path
+from django.conf import settings 
+from django.conf.urls.static import static 
+
+from rest_framework import permissions # Shto këtë import
+from drf_yasg.views import get_schema_view # Shto këtë import
+from drf_yasg import openapi # Shto këtë import
+
+schema_view = get_schema_view(
+   openapi.Info(
+      title="Food Delivery API",
+      default_version='v1',
+      description="API documentation for the Food Delivery System",
+      terms_of_service="https://www.google.com/policies/terms/", # Zëvendëso me URL-në tënde
+      contact=openapi.Contact(email="contact@fooddelivery.local"), # Zëvendëso
+      license=openapi.License(name="BSD License"), # Zëvendëso
+   ),
+   public=True,
+   permission_classes=(permissions.AllowAny,),
+)
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('api/', include('api.urls')), 
+    
+    # URL-të për dokumentacionin e API-së
+    re_path(r'^swagger(?P<format>\.json|\.yaml)$', schema_view.without_ui(cache_timeout=0), name='schema-json'),
+    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+]
+
+# Shërbe skedarët media gjatë zhvillimit
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# End of File: food_delivery_project/urls.py
+#------------------------------------------------------------------------------
+
+# File: food_delivery_project/wsgi.py
+
+"""
+WSGI config for food_delivery_project project.
+
+It exposes the WSGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/5.2/howto/deployment/wsgi/
+"""
+
+import os
+
+from django.core.wsgi import get_wsgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'food_delivery_project.settings')
+
+application = get_wsgi_application()
+
+
+# End of File: food_delivery_project/wsgi.py
+#------------------------------------------------------------------------------
+

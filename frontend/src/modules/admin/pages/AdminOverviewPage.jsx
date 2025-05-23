@@ -120,7 +120,8 @@ const AdminOverviewPage = () => {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl sm:text-3xl font-semibold text-gray-800 dark:text-white">Pasqyra e Administratorit</h1>
         <Button variant="outline" onClick={fetchOverviewData} isLoading={isLoading.stats || isLoading.activities} disabled={isLoading.stats || isLoading.activities}
-                iconLeft={<ArrowPathIcon className={`h-4 w-4 ${ (isLoading.stats || isLoading.activities) ? 'animate-spin': ''}`}/>}>
+                iconLeft={ArrowPathIcon} 
+                iconLeftClassName={`h-4 w-4 ${ (isLoading.stats || isLoading.activities) ? 'animate-spin': ''}`}>
           Rifresko
         </Button>
       </div>

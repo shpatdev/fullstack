@@ -21,7 +21,9 @@ from .views import (
     ReviewViewSet, # Shto ReviewViewSet
     OperatingHoursViewSet, # Sigurohu që OperatingHoursViewSet është këtu
     DriverProfileViewSet, # Shto DriverProfileViewSet
-    LogoutAPIView # Shto LogoutAPIView
+    LogoutAPIView, # Shto LogoutAPIView
+    ReviewReplyViewSet, # Shto këtë
+    CartViewSet # SHTO IMPORTIN E CARTVIEWSET
 )
 
 # Router kryesor
@@ -29,10 +31,10 @@ router = DefaultRouter()
 router.register(r'admin/users', UserViewSet, basename='user-admin-management') # Për menaxhim nga Admini
 router.register(r'addresses', AddressViewSet, basename='address') # Për adresat e userit të kyçur
 router.register(r'cuisine-types', CuisineTypeViewSet, basename='cuisinetype') # CRUD për llojet e kuzhinave (Admin)
-router.register(r'restaurants', RestaurantViewSet)
-# OperatingHours, MenuCategory, MenuItem do të jenë nested
+router.register(r'restaurants', RestaurantViewSet, basename='restaurant') # SHTO basename='restaurant'
 router.register(r'orders', OrderViewSet, basename='order') 
-router.register(r'driver-profiles', DriverProfileViewSet, basename='driverprofile') # Regjistro DriverProfileViewSet
+router.register(r'driver-profiles', DriverProfileViewSet, basename='driverprofile')
+router.register(r'cart', CartViewSet, basename='cart') # SHTO REGJISTRIMIN E CARTVIEWSET
 
 # Nested Router për MenuCategories nën Restaurants
 # /api/restaurants/{restaurant_pk}/categories/
@@ -51,7 +53,16 @@ restaurants_router.register(r'reviews', ReviewViewSet, basename='restaurant-revi
 
 # Nested router për MenuItem nën MenuCategory (që është nën Restaurant)
 menu_categories_router = routers.NestedSimpleRouter(restaurants_router, r'menu-categories', lookup='menu_category')
-menu_categories_router.register(r'menu-items', MenuItemViewSet, basename='restaurant-menu-category-items')
+menu_categories_router.register(r'menu-items', MenuItemViewSet, basename='restaurant-menu-category-items') # Mund ta heqësh nëse nuk e përdor këtë nivel nesting-u për items
+
+# Nested router për ReviewReply nën Review
+reviews_router = routers.NestedSimpleRouter(restaurants_router, r'reviews', lookup='review')
+reviews_router.register(r'replies', ReviewReplyViewSet, basename='review-replies')
+
+
+# Duhet të ketë një nested router edhe për CartItem nën Cart
+# cart_items_router = routers.NestedSimpleRouter(router, r'cart', lookup='cart')
+# cart_items_router.register(r'items', CartItemViewSet, basename='cart-items')
 
 
 urlpatterns = [
@@ -60,10 +71,11 @@ urlpatterns = [
     path('auth/login/', CustomTokenObtainPairView.as_view(), name='auth_login'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/me/', UserMeAPIView.as_view(), name='auth_me'),
-    path('auth/logout/', LogoutAPIView.as_view(), name='auth_logout'), # KY RRESHT I SHTUAR
+    path('auth/logout/', LogoutAPIView.as_view(), name='auth_logout'),
     
     # API endpoints të menaxhuara nga router-i kryesor dhe ato nested
     path('', include(router.urls)),
     path('', include(restaurants_router.urls)),
-    path('', include(menu_categories_router.urls)), # Përfshij URL-të e nested router për menu items
+    path('', include(reviews_router.urls)), # Shto këtë
+    # path('', include(menu_categories_router.urls)), # Komentoje nëse nuk e përdor nesting-un e thellë për items
 ]

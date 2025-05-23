@@ -15,9 +15,12 @@ const UserFormModal = ({ isOpen, onClose, user: existingUser, onSave }) => {
     email: '',
     password: '',
     role: 'CUSTOMER',
-    status: 'ACTIVE',
+    status: 'ACTIVE', // This might be deprecated if is_active is used primarily
+    is_active: true, // Added for clarity, maps to backend's is_active
     first_name: '', // Optional
     last_name: '', // Optional
+    is_staff: false, // Added
+    is_available_for_delivery: false, // Added for DELIVERY_PERSONNEL
   };
 
   const [formData, setFormData] = useState(initialFormData);
@@ -32,9 +35,12 @@ const UserFormModal = ({ isOpen, onClose, user: existingUser, onSave }) => {
           email: existingUser.email || '',
           password: '', // Keep password blank unless specifically changing
           role: existingUser.role || 'CUSTOMER',
-          status: existingUser.status || 'ACTIVE',
+          status: existingUser.status || 'ACTIVE', // Potentially map to is_active
+          is_active: existingUser.is_active !== undefined ? existingUser.is_active : true,
           first_name: existingUser.first_name || '',
           last_name: existingUser.last_name || '',
+          is_staff: existingUser.is_staff || false,
+          is_available_for_delivery: existingUser.is_driver_available || existingUser.is_available_for_delivery || false, // check for driverProfile field
         });
       } else {
         setFormData(initialFormData);
@@ -44,8 +50,11 @@ const UserFormModal = ({ isOpen, onClose, user: existingUser, onSave }) => {
   }, [existingUser, isOpen]);
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ 
+        ...prev, 
+        [name]: type === 'checkbox' ? checked : value 
+    }));
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: null }));
   };
 
@@ -61,7 +70,8 @@ const UserFormModal = ({ isOpen, onClose, user: existingUser, onSave }) => {
     else if (formData.password && formData.password.length < 6) newErrors.password = "Fjalëkalimi duhet të jetë së paku 6 karaktere.";
     
     if (!formData.role) newErrors.role = "Roli është i detyrueshëm.";
-    if (!formData.status) newErrors.status = "Statusi është i detyrueshëm.";
+    // Status validation might be removed if is_active is the primary field
+    // if (!formData.status) newErrors.status = "Statusi është i detyrueshëm.";
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -76,11 +86,20 @@ const UserFormModal = ({ isOpen, onClose, user: existingUser, onSave }) => {
     if (!payload.password && existingUser) delete payload.password; // Don't send empty password if not changing for existing user
     if (!payload.first_name) delete payload.first_name; // Don't send if empty
     if (!payload.last_name) delete payload.last_name;   // Don't send if empty
+    delete payload.status; // Remove if is_active is primary
+
+    // Ensure is_available_for_delivery is only sent if role is DELIVERY_PERSONNEL
+    if (payload.role !== 'DELIVERY_PERSONNEL' && payload.role !== 'DRIVER') {
+        delete payload.is_available_for_delivery;
+    }
+
 
     try {
       let savedUser;
       if (existingUser?.id) {
-        savedUser = await adminApi.updateUser(existingUser.id, payload, adminUser.token);
+        const updatePayload = { ...payload };
+        delete updatePayload.email; // Email should not be updatable
+        savedUser = await adminApi.updateUser(existingUser.id, updatePayload, adminUser.token);
         showSuccess("Përdoruesi u përditësua me sukses!");
       } else {
         savedUser = await adminApi.createUser(payload, adminUser.token);
@@ -130,7 +149,8 @@ const UserFormModal = ({ isOpen, onClose, user: existingUser, onSave }) => {
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
           <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} required
-                 className={`input-form ${errors.email ? 'input-form-error' : ''}`}/>
+                 readOnly={!!existingUser} // Make email readOnly if editing
+                 className={`input-form ${errors.email ? 'input-form-error' : ''} ${existingUser ? 'bg-gray-100 dark:bg-slate-700 cursor-not-allowed' : ''}`}/>
           {errors.email && <p className="input-error-message">{errors.email}</p>}
         </div>
         <div>
@@ -155,15 +175,34 @@ const UserFormModal = ({ isOpen, onClose, user: existingUser, onSave }) => {
             {errors.role && <p className="input-error-message">{errors.role}</p>}
             </div>
             <div>
-            <label htmlFor="status" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Statusi</label>
-            <select name="status" id="status" value={formData.status} onChange={handleChange} required
-                    className={`input-form ${errors.status ? 'input-form-error' : ''}`}>
-                <option value="ACTIVE">Aktiv</option>
-                <option value="SUSPENDED">Pezulluar</option>
-                <option value="PENDING_APPROVAL">Në Pritje Miratimi</option>
+            <label htmlFor="is_active" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Statusi</label>
+            <select 
+                name="is_active" 
+                id="is_active" 
+                value={formData.is_active.toString()} // Convert boolean to string for select value
+                onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.value === 'true' }))} 
+                required
+                className={`input-form ${errors.is_active ? 'input-form-error' : ''}`}
+            >
+                <option value="true">Aktiv</option>
+                <option value="false">Joaktiv/Pezulluar</option>
             </select>
-            {errors.status && <p className="input-error-message">{errors.status}</p>}
+            {errors.is_active && <p className="input-error-message">{errors.is_active}</p>}
             </div>
+        </div>
+        <div className="space-y-2 pt-2">
+            <div className="flex items-center">
+                <input id="is_staff" name="is_staff" type="checkbox" checked={formData.is_staff} onChange={handleChange}
+                    className="h-4 w-4 text-primary-600 border-gray-300 dark:border-gray-500 rounded focus:ring-primary-500"/>
+                <label htmlFor="is_staff" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">Pjesë e Stafit (Admin Access)</label>
+            </div>
+            {(formData.role === 'DELIVERY_PERSONNEL' || formData.role === 'DRIVER') && (
+                <div className="flex items-center">
+                    <input id="is_available_for_delivery" name="is_available_for_delivery" type="checkbox" checked={formData.is_available_for_delivery} onChange={handleChange}
+                        className="h-4 w-4 text-primary-600 border-gray-300 dark:border-gray-500 rounded focus:ring-primary-500"/>
+                    <label htmlFor="is_available_for_delivery" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">Disponueshëm për Dërgesa (për Shoferët)</label>
+                </div>
+            )}
         </div>
         <div className="pt-3 flex justify-end space-x-3">
           <Button type="button" variant="ghost" onClick={onClose} disabled={isLoading}>Anulo</Button>

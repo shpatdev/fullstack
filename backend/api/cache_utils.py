@@ -29,6 +29,7 @@ def get_cuisine_types_list_cache_key():
 # --- Restaurants List Cache (Public, Paginated) ---
 RESTAURANTS_LIST_PUBLIC_VERSION_KEY = 'restaurants_list_public_version_v1'
 RESTAURANTS_LIST_PUBLIC_CACHE_KEY_PREFIX = 'restaurants_list_public_data_v'
+RESTAURANT_LIST_CACHE_TTL = 60 * 15 # Cache për 15 minuta
 
 def get_restaurants_list_public_cache_version():
     version = cache.get(RESTAURANTS_LIST_PUBLIC_VERSION_KEY)

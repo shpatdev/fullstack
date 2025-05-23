@@ -1,21 +1,23 @@
 // src/api/apiService.js
-const API_BASE_URL = 'http://localhost:8000/api'; 
+const API_BASE_URL = 'http://localhost:8000/api'; // Ensure this is your correct API base URL
 
 export const apiService = {
-  getAuthToken: () => localStorage.getItem('authToken'), // Changed from 'accessToken' to 'authToken' to match AuthContext
-  setToken: (token) => { // Added to match AuthContext
-    // This is a simplified setter, AuthContext handles localStorage
-    // This is mainly for apiService internal use if needed, or for direct calls outside of AuthContext lifecycle
-    // For now, it's not strictly necessary if AuthContext is the sole manager of the token in localStorage
+  getAuthToken: () => localStorage.getItem('authToken'),
+
+  setToken: (token) => {
+    localStorage.setItem('authToken', token);
   },
-  clearToken: () => { // Added to match AuthContext
-    // Similar to setToken, for internal consistency if needed
+
+  clearToken: () => {
+    localStorage.removeItem('authToken');
   },
 
   request: async (endpoint, options = {}) => {
-    const token = apiService.getAuthToken();
+    const token = localStorage.getItem('authToken');
+    const url = `${API_BASE_URL}${endpoint}`;
+
     const headers = {
-      // Content-Type will be set conditionally below
+      'Content-Type': 'application/json', // Default Content-Type
       ...options.headers,
     };
 
@@ -28,120 +30,102 @@ export const apiService = {
       headers,
     };
 
-    // Set Content-Type only if body exists and is not FormData
-    if (options.body && !(options.body instanceof FormData)) {
-      config.headers['Content-Type'] = 'application/json';
-      // Ensure body is stringified if it's an object (common mistake)
-      if (typeof options.body === 'object' && options.body !== null) {
-        config.body = JSON.stringify(options.body);
-      }
+    // Stringify the body if it's a POST/PUT/PATCH request with JSON Content-Type and body is an object
+    if (config.body && typeof config.body === 'object' && 
+        headers['Content-Type'] === 'application/json' && 
+        !(config.body instanceof FormData)) { // FormData is handled by requestWithFormData or should not be stringified
+      config.body = JSON.stringify(config.body);
     }
-    // If options.body is FormData, browser sets Content-Type automatically.
+
 
     try {
-      console.log(`API Request: ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`, { headers: config.headers, bodyProvided: !!options.body });
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-
-      let responseData;
-
-      if (response.status === 204) { // No Content
-        return null; 
-      }
-
-      const contentType = response.headers.get("content-type");
-      if (contentType && contentType.includes("application/json")) {
-          responseData = await response.json();
-      } else {
-          const textResponse = await response.text();
-          console.warn(`API Warning: Endpoint ${endpoint} returned non-JSON response (status ${response.status}). Body: ${textResponse.substring(0, 500)}...`);
-          responseData = { 
-              detail: `Përgjigje e papritur nga serveri (Status: ${response.status}). Ju lutem provoni përsëri ose kontaktoni suportin nëse problemi vazhdon.`,
-              _rawResponse: textResponse 
-          };
-          if (response.status === 401 || response.status === 403) {
-             if (textResponse && textResponse.length < 200 && !textResponse.toLowerCase().includes('<html')) {
-                responseData.detail = textResponse;
-             }
-          }
-      }
-
-      if (!response.ok) { 
-        const message = responseData?.detail || responseData?.error || (typeof responseData === 'string' ? responseData : `Kërkesa dështoi me statusin ${response.status}`);
-        console.error(`API Error ${response.status} for ${API_BASE_URL}${endpoint}:`, message, responseData);
-        // Attach responseData to the error object for more context in calling functions
-        const error = new Error(message);
-        error.response = responseData; // Attach the full response data
-        error.status = response.status; // Attach the status code
+      const response = await fetch(url, config);
+      if (!response.ok) {
+        let errorData;
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          errorData = await response.json().catch(() => ({ detail: 'Failed to parse JSON error response.' }));
+        } else {
+          const textError = await response.text().catch(() => 'Failed to read error response text.');
+          errorData = { detail: textError || response.statusText };
+        }
+        
+        const error = new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        error.response = errorData; 
+        error.status = response.status;
         throw error;
       }
-      return responseData;
-
+      if (response.status === 204) {
+        return null;
+      }
+      // Ensure we attempt to parse JSON only if there's a body.
+      // Some successful responses (like 200 OK for a DELETE) might not have a body.
+      const responseText = await response.text();
+      if (!responseText) {
+        return null; // Or an appropriate representation of an empty successful response
+      }
+      return JSON.parse(responseText); // Parse the text manually after checking it's not empty
     } catch (error) {
-      console.error(`Network or parsing error for ${API_BASE_URL}${endpoint}:`, error);
-      const errorMessage = error instanceof Error ? error.message : 'Gabim i panjohur rrjeti.';
-      // Propagate the enriched error if it came from the !response.ok block
-      if (error.response && error.status) {
+      // If the error is already an enriched one from the !response.ok block, rethrow it
+      if (error.status && error.response) {
+        console.error('API request failed (pre-enriched):', error.message, 'Endpoint:', endpoint, 'Status:', error.status, 'Response:', JSON.stringify(error.response, null, 2));
         throw error;
       }
-      throw new Error(errorMessage);
+      // Otherwise, log and throw a generic or new error
+      console.error('API request failed (generic catch):', error.message, 'Endpoint:', endpoint, 'Config:', JSON.stringify(config, null, 2), 'Original Error:', error);
+      throw error; // Re-throw the original error or a new one
     }
   },
 
   requestWithFormData: async (endpoint, formData, options = {}) => {
-    const token = apiService.getAuthToken();
+    const token = localStorage.getItem('authToken');
+    const url = `${API_BASE_URL}${endpoint}`;
+
     const headers = {
-        // Do NOT set 'Content-Type': 'multipart/form-data', browser does it.
-        ...options.headers,
+      // 'Content-Type' is not set for FormData, browser does it.
+      ...options.headers,
     };
+
     if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
+    const config = {
+      method: 'POST', 
+      ...options,
+      headers,
+      body: formData,
+    };
+
     try {
-        console.log(`API FormData Request: ${options.method || 'POST'} ${API_BASE_URL}${endpoint}`);
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-            method: options.method || 'POST', // Default to POST for FormData
-            headers,
-            body: formData,
-            ...options, // Spread other options like signal for AbortController
-        });
-
-        if (response.status === 204) return null;
-        
-        let responseData;
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-            responseData = await response.json();
+      const response = await fetch(url, config);
+      if (!response.ok) {
+        let errorData;
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          errorData = await response.json().catch(() => ({ detail: 'Failed to parse JSON error response.' }));
         } else {
-            const textResponse = await response.text();
-            console.warn(`API FormData Warning: Endpoint ${endpoint} returned non-JSON response (status ${response.status}). Body: ${textResponse.substring(0, 500)}...`);
-            responseData = { 
-                detail: `Përgjigje e papritur nga serveri pas ngarkimit të skedarit (Status: ${response.status}).`,
-                _rawResponse: textResponse
-            };
-             if (response.status === 401 || response.status === 403) {
-                 if (textResponse && textResponse.length < 200 && !textResponse.toLowerCase().includes('<html')) {
-                    responseData.detail = textResponse;
-                 }
-             }
+          const textError = await response.text().catch(() => 'Failed to read error response text.');
+          errorData = { detail: textError || response.statusText };
         }
 
-        if (!response.ok) {
-            const message = responseData?.detail || `Kërkesa me FormData dështoi me statusin ${response.status}`;
-            console.error(`API FormData Error ${response.status} for ${API_BASE_URL}${endpoint}:`, message, responseData);
-            const error = new Error(message);
-            error.response = responseData;
-            error.status = response.status;
-            throw error;
-        }
-        return responseData;
+        const error = new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        error.response = errorData;
+        error.status = response.status;
+        throw error;
+      }
+      if (response.status === 204) {
+        return null;
+      }
+      // Similar handling for potentially empty successful responses
+      const responseText = await response.text();
+      if (!responseText) {
+        return null;
+      }
+      return JSON.parse(responseText);
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Gabim i panjohur rrjeti gjatë kërkesës me FormData.';
-        console.error(`Network or FormData error for ${API_BASE_URL}${endpoint}:`, error);
-        if (error.response && error.status) {
-            throw error;
-        }
-        throw new Error(errorMessage);
+      console.error('API FormData request failed:', error.message, 'Endpoint:', endpoint, 'Original Error:', error);
+      throw error;
     }
   }
 };

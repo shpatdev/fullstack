@@ -18,33 +18,32 @@ const RegisterPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
-  const { register, loadingAuth, error: authError, setError: setAuthError, isAuthenticated, user } = useAuth();
+  const { register, loadingAuth, error: authError, setError: setAuthError, isAuthenticated, user, clearAuthError } = useAuth(); // Added clearAuthError
   const navigate = useNavigate();
   const location = useLocation();
-  // Get the whole notification context object
   const notification = useNotification();
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      const from = location.state?.from?.pathname || (user.role === 'RESTAURANT_OWNER' ? '/restaurant/overview' : user.role === 'DRIVER' ? '/driver/dashboard' : '/customer/restaurants');
+      const from = location.state?.from?.pathname || (user.role === 'RESTAURANT_OWNER' ? '/restaurant/overview' : (user.role === 'DRIVER' || user.role === 'DELIVERY_PERSONNEL') ? '/driver/dashboard' : '/customer/restaurants');
       navigate(from, { replace: true });
     }
-  }, [isAuthenticated, user, navigate, location.state]);
+  }, [isAuthenticated, user, navigate, location.state]); // Dependencies are okay, assuming user object is managed well.
 
    useEffect(() => {
     return () => {
-      if (setAuthError) setAuthError(null);
+      if (clearAuthError) clearAuthError(); // Use clearAuthError from context
     };
-  }, [setAuthError]);
+  }, [clearAuthError]); // Use clearAuthError
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    if (authError) setAuthError(null); 
+    if (authError) clearAuthError ? clearAuthError() : setAuthError(null); // Clear error on change
   };
   
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (setAuthError) setAuthError(null);
+    if (clearAuthError) clearAuthError(); // Clear previous errors
 
     if (formData.password !== formData.password_confirm) {
       if (notification && typeof notification.showError === 'function') {
@@ -84,8 +83,9 @@ const RegisterPage = () => {
       navigate('/auth/login'); 
     } catch (err) {
       let errorMessage = "Gabim gjatë regjistrimit.";
-      // Check if err.response exists and has data (from apiService enriched error)
-      if (err.response && err.response.detail) {
+      if (authError) {
+          errorMessage = authError;
+      } else if (err.response && err.response.detail) {
           errorMessage = err.response.detail;
       } else if (err.response && typeof err.response === 'object') {
           // Fallback for other types of object errors if detail is not present
@@ -104,14 +104,11 @@ const RegisterPage = () => {
         errorMessage = err;
       }
       
-      if (setAuthError) setAuthError(errorMessage);
+      // AuthContext.register should set the error.
       if (notification && typeof notification.showError === 'function') {
         notification.showError(errorMessage);
       } else {
         console.warn('[RegisterPage] showError function is not available from NotificationContext. Error to display:', errorMessage);
-        // As a fallback, you might want to alert the error or handle it differently
-        // For example, if AuthContext's error display is the primary, this might be acceptable.
-        // alert(errorMessage); // Or some other fallback UI
       }
       console.error("Register page error:", err);
     }

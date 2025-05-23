@@ -23,6 +23,7 @@ const AvailabilityToggle = () => {
         variant={isDriverOnline ? 'danger' : 'success'}
         className="w-40 text-xs sm:text-sm"
         iconLeft={isLoadingAvailabilityToggle ? ArrowPathIcon : (isDriverOnline ? XCircleIcon : CheckCircleIcon)}
+        iconLeftClassName="h-5 w-5" // Assuming h-5 w-5 was intended, default is h-4 w-4
         disabled={isLoadingAvailabilityToggle}
       >
         {isLoadingAvailabilityToggle ? 'Ndryshon...' : (isDriverOnline ? 'Bëhu Jo Aktiv' : 'Bëhu Aktiv')}

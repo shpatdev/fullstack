@@ -3,6 +3,7 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.conf import settings # Për AUTH_USER_MODEL te ForeignKey
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils import timezone # SHTO KËTË
 
 class UserManager(BaseUserManager):
     """Menaxher i personalizuar për modelin User."""
@@ -232,7 +233,7 @@ class MenuItem(models.Model):
     category = models.ForeignKey(MenuCategory, on_delete=models.CASCADE, related_name='menu_items', help_text="Kategoria së cilës i përket ky artikull")
     # Për qasje më të lehtë, mund të shtojmë edhe një ForeignKey direkt te Restaurant,
     # edhe pse mund të arrihet përmes category.restaurant. Kjo mund të ndihmojë në query.
-    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name='all_menu_items_direct_link')
+    restaurant = models.ForeignKey(Restaurant, on_delete=models.CASCADE, related_name='all_menu_items', help_text="Restoranti të cilit i përket ky artikull") # SHTO KËTË
 
     name = models.CharField(max_length=255, help_text="Emri i artikullit të menusë")
     description = models.TextField(blank=True, null=True, help_text="Përshkrimi i artikullit")
@@ -255,6 +256,53 @@ class MenuItem(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.category.name} - {self.restaurant.name})"
+
+# === MODELET E REJA PËR SHPORTËN ===
+class Cart(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='cart',
+        null=True, blank=True, # Lejo user të jetë null për përdorues anonimë (në të ardhmen)
+        help_text="Përdoruesi të cilit i përket shporta (ose sesioni për anonimë)"
+    )
+    # session_key = models.CharField(max_length=40, null=True, blank=True, unique=True) # Për përdorues anonimë
+    restaurant = models.ForeignKey(
+        Restaurant, 
+        on_delete=models.CASCADE, 
+        null=True, blank=True, # Shporta mund të jetë bosh pa restorant, ose restoranti caktohet me artikullin e parë
+        related_name='carts',
+        help_text="Restoranti nga i cili po porositet (një shportë për një restorant)"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        user_identifier = self.user.email if self.user else f"Session Unknown" # Simplified session_key part
+        restaurant_name = self.restaurant.name if self.restaurant else "Pa Restorant"
+        return f"Shporta për {user_identifier} nga {restaurant_name}"
+
+    @property
+    def total_amount(self):
+        return sum(item.subtotal for item in self.items.all())
+
+class CartItem(models.Model):
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')
+    menu_item = models.ForeignKey(MenuItem, on_delete=models.CASCADE, related_name='cart_items')
+    quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('cart', 'menu_item') # Një artikull mund të jetë vetëm një herë në shportë, sasia e modifikon atë
+        ordering = ['added_at']
+
+    @property
+    def subtotal(self):
+        return self.menu_item.price * self.quantity
+
+    def __str__(self):
+        return f"{self.quantity} x {self.menu_item.name} në shportën ID: {self.cart.id}"
+# === FUNDI I MODELEVE TË REJA PËR SHPORTËN ===
 
 class Review(models.Model):
     RATING_CHOICES = [(i, str(i)) for i in range(1, 6)]
@@ -328,8 +376,8 @@ class Order(models.Model):
     delivery_address_notes = models.TextField(blank=True, null=True, help_text="Shënime shtesë për dërgesën")
     
     order_total = models.DecimalField(max_digits=10, decimal_places=2, help_text="Shuma totale e porosisë")
-    # sub_total = models.DecimalField(max_digits=10, decimal_places=2, help_text="Nëntotali para tarifave")
-    # delivery_fee = models.DecimalField(max_digits=6, decimal_places=2, default=0.00, help_text="Tarifa e dërgesës")
+    sub_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Nëntotali para tarifave") # SHTO KËTË
+    delivery_fee = models.DecimalField(max_digits=6, decimal_places=2, default=0.00, help_text="Tarifa e dërgesës") # SHTO KËTË
     # service_fee = models.DecimalField(max_digits=6, decimal_places=2, default=0.00, help_text="Tarifa e shërbimit (nëse ka)")
 
     status = models.CharField(max_length=30, choices=OrderStatus.choices, default=OrderStatus.PENDING, db_index=True)
@@ -342,10 +390,10 @@ class Order(models.Model):
     actual_delivery_time = models.DateTimeField(null=True, blank=True, help_text="Koha reale kur u dërgua")
     
     # Koha kur restoranti konfirmon, fillon përgatitjen, etj.
-    # confirmed_at = models.DateTimeField(null=True, blank=True)
-    # preparation_started_at = models.DateTimeField(null=True, blank=True)
-    # ready_for_pickup_at = models.DateTimeField(null=True, blank=True)
-    # picked_up_by_driver_at = models.DateTimeField(null=True, blank=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    preparation_started_at = models.DateTimeField(null=True, blank=True)
+    ready_for_pickup_at = models.DateTimeField(null=True, blank=True)
+    picked_up_by_driver_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -357,6 +405,20 @@ class Order(models.Model):
 
     def __str__(self):
         return f"Porosia #{self.id} nga {self.customer.email if self.customer else 'N/A'} te {self.restaurant.name if self.restaurant else 'N/A'}"
+
+    def save(self, *args, **kwargs):
+        # Përditëso kohët e statusit nëse statusi ndryshon
+        is_new = self._state.adding
+        if not is_new: # Nëse është një update
+            old_order = Order.objects.get(pk=self.pk)
+            if old_order.status != self.status:
+                if self.status == self.OrderStatus.CONFIRMED: self.confirmed_at = timezone.now()
+                elif self.status == self.OrderStatus.PREPARING: self.preparation_started_at = timezone.now()
+                elif self.status == self.OrderStatus.READY_FOR_PICKUP: self.ready_for_pickup_at = timezone.now()
+                elif self.status == self.OrderStatus.ON_THE_WAY: self.picked_up_by_driver_at = timezone.now()
+                elif self.status == self.OrderStatus.DELIVERED: self.actual_delivery_time = timezone.now()
+        super().save(*args, **kwargs)
+
 
 class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')

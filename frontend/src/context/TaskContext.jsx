@@ -8,7 +8,7 @@ const TaskContext = createContext(null);
 
 export const TaskProvider = ({ children }) => {
   const { user, isAuthenticated, token, fetchAndSetUser } = useAuth();
-  const { showSuccess, showError } = useNotification(); // Hiq showInfo nëse nuk e përdor
+  const notificationContext = useNotification(); // Get the whole context
 
   const [availableTasks, setAvailableTasks] = useState([]);
   const [activeTask, setActiveTask] = useState(null); // Ky do të mbajë formatin që pret ActiveDeliverySection
@@ -76,15 +76,15 @@ export const TaskProvider = ({ children }) => {
     }
     setIsLoading(prev => ({ ...prev, availableTasks: true }));
     try {
-      const tasksFromApi = await courierApi.getAvailableTasks(); // Supozon se kthen një array
+      const tasksFromApi = await courierApi.getAvailableTasks();
       setAvailableTasks((tasksFromApi || []).map(transformTaskDataForFrontend).filter(Boolean));
     } catch (err) { 
-        showError(err.message || "S'u mund të ngarkoheshin detyrat e disponueshme."); 
+        if (notificationContext?.showNotification) notificationContext.showNotification(err.message || "S'u mund të ngarkoheshin detyrat e disponueshme.", "error"); 
         setAvailableTasks([]); 
     } finally { 
         setIsLoading(prev => ({ ...prev, availableTasks: false })); 
     }
-  }, [isAuthenticated, user, isDriverOnline, token, showError]);
+  }, [isAuthenticated, user, isDriverOnline, token, notificationContext]); // Added notificationContext
 
   const fetchActiveTask = useCallback(async () => {
     if (!isAuthenticated || !(user?.role === 'DRIVER' || user?.role === 'DELIVERY_PERSONNEL') || !token) {
@@ -100,12 +100,13 @@ export const TaskProvider = ({ children }) => {
             setActiveTask(null);
         } else {
             console.warn("TaskContext: Problem në marrjen e detyrës aktive:", err.message);
+            // No notification for non-critical errors like 404 for active task
             setActiveTask(null);
         }
     } finally { 
         setIsLoading(prev => ({ ...prev, activeTask: false })); 
     }
-  }, [isAuthenticated, user, token]);
+  }, [isAuthenticated, user, token]); // notification not used here, so not in deps
 
   const fetchDeliveryHistory = useCallback(async () => {
     if (!isAuthenticated || !(user?.role === 'DRIVER' || user?.role === 'DELIVERY_PERSONNEL') || !token) {
@@ -116,103 +117,97 @@ export const TaskProvider = ({ children }) => {
       const historyFromApi = await courierApi.getDriverDeliveryHistory();
       setDeliveryHistory((historyFromApi || []).map(transformTaskDataForFrontend).filter(Boolean));
     } catch (err) { 
-        showError(err.message || "S'u mund të ngarkohej historiku."); 
+        if (notificationContext?.showNotification) notificationContext.showNotification(err.message || "S'u mund të ngarkohej historiku.", "error"); 
         setDeliveryHistory([]); 
     } finally { 
         setIsLoading(prev => ({ ...prev, deliveryHistory: false })); 
     }
-  }, [isAuthenticated, user, token, showError]);
+  }, [isAuthenticated, user, token, notificationContext]); // Added notificationContext
 
-  const toggleDriverAvailability = async () => { // Nuk ka nevojë për argument, merr statusin nga state-i lokal
+  const toggleDriverAvailability = async () => { 
     if (!isAuthenticated || !(user?.role === 'DRIVER' || user?.role === 'DELIVERY_PERSONNEL') || !token) return;
     
-    const newAvailabilityApiPayload = !isDriverOnline; // Statusi që do t'i dërgohet API-së
+    const newAvailabilityApiPayload = !isDriverOnline; 
     setIsLoading(prev => ({ ...prev, availabilityToggle: true }));
     try {
-      await courierApi.updateDriverAvailability(newAvailabilityApiPayload); // Dërgo statusin e ri
-      setIsDriverOnline(newAvailabilityApiPayload); // Përditëso UI menjëherë
-      if (fetchAndSetUser && token) await fetchAndSetUser(token); // Rifresko gjendjen e user-it globalisht
-      showSuccess(`Disponueshmëria: ${newAvailabilityApiPayload ? 'Online' : 'Offline'}`);
+      await courierApi.updateDriverAvailability(newAvailabilityApiPayload); 
+      setIsDriverOnline(newAvailabilityApiPayload); 
+      if (fetchAndSetUser && token) await fetchAndSetUser(token); 
+      if (notificationContext?.showNotification) notificationContext.showNotification(`Disponueshmëria: ${newAvailabilityApiPayload ? 'Online' : 'Offline'}`, "success");
       if (newAvailabilityApiPayload) { 
+        fetchActiveTask(); // Fetch active task first
         fetchAvailableTasks(); 
-        fetchActiveTask(); // Kontrollo nëse ka ndonjë detyrë aktive të papërfunduar
       } else { 
         setAvailableTasks([]); 
-        // Mos e bëj setActiveTask(null) këtu, pasi shoferi mund të dojë të përfundojë detyrën aktive para se të bëhet offline plotësisht
       }
     } catch (err) { 
-        showError(err.message || "Gabim tek disponueshmëria.");
-        // Ktheje statusin e UI nëse API dështon (opsionale)
-        // setIsDriverOnline(isDriverOnline); 
+        if (notificationContext?.showNotification) notificationContext.showNotification(err.message || "Gabim tek disponueshmëria.", "error");
     } finally { 
         setIsLoading(prev => ({ ...prev, availabilityToggle: false })); 
     }
-  };
+  }; // Dependencies for this are implicitly class members or stable hooks from AuthContext
 
   const acceptTask = async (orderId) => {
     if (!isAuthenticated || !(user?.role === 'DRIVER' || user?.role === 'DELIVERY_PERSONNEL') || activeTask || !token) {
-        showError(activeTask ? "Keni një detyrë aktive." : "Problem autentikimi."); return;
+        if (notificationContext?.showNotification) notificationContext.showNotification(activeTask ? "Keni një detyrë aktive." : "Problem autentikimi.", "error"); return;
     }
     setIsLoading(prev => ({ ...prev, acceptTask: true, taskIdBeingAccepted: orderId }));
     try {
       const acceptedTaskData = await courierApi.acceptDeliveryTask(orderId);
       setActiveTask(transformTaskDataForFrontend(acceptedTaskData));
       setAvailableTasks(prev => prev.filter(task => task.id !== orderId));
-      showSuccess(`Detyra #${orderId} u pranua!`);
+      if (notificationContext?.showNotification) notificationContext.showNotification(`Detyra #${orderId} u pranua!`, "success");
     } catch (err) { 
-        showError(err.message || "Gabim gjatë pranimit. Mund të jetë marrë."); 
-        fetchAvailableTasks(); // Rifresko listën e detyrave
+        if (notificationContext?.showNotification) notificationContext.showNotification(err.message || "Gabim gjatë pranimit. Mund të jetë marrë.", "error"); 
+        fetchAvailableTasks(); 
     } finally { 
         setIsLoading(prev => ({ ...prev, acceptTask: false, taskIdBeingAccepted: null })); 
     }
-  };
+  }; // Dependencies for this are implicitly class members or stable hooks from AuthContext
 
-  // Emri i funksionit duhet të përputhet me atë të komponentit: updateActiveTaskStatus
   const updateActiveTaskStatus = async (newFrontendStatus) => {
-    if (!isAuthenticated || !activeTask || !activeTask.id || !token) { // Kontrollo edhe activeTask.id
-        showError("Nuk ka detyrë aktive për t'u përditësuar."); return;
+    if (!isAuthenticated || !activeTask || !activeTask.id || !token) { 
+        if (notificationContext?.showNotification) notificationContext.showNotification("Nuk ka detyrë aktive për t'u përditësuar.", "error"); return;
     }
-    const newBackendStatus = newFrontendStatus.toUpperCase().replace(/ /g, '_'); // P.sh., "picked up" -> "PICKED_UP"
+    const newBackendStatus = newFrontendStatus.toUpperCase().replace(/ /g, '_'); 
     
     setIsLoading(prev => ({ ...prev, updateTaskStatus: true }));
     try {
       const updatedOrderFromApi = await courierApi.updateDeliveryStatus(activeTask.id, newBackendStatus);
-      showSuccess(`Statusi u ndryshua në "${newFrontendStatus}".`);
+      if (notificationContext?.showNotification) notificationContext.showNotification(`Statusi u ndryshua në "${newFrontendStatus}".`, "success");
       
       const finalStatuses = ['DELIVERED', 'FAILED_DELIVERY', 'CANCELLED_BY_USER', 'CANCELLED_BY_RESTAURANT'];
       if (finalStatuses.includes(newBackendStatus)) {
         setActiveTask(null);
-        fetchDeliveryHistory(); // Rifresko historikun
-        if(isDriverOnline) fetchAvailableTasks(); // Kontrollo për detyra të reja vetëm nëse është online
+        fetchDeliveryHistory(); 
+        if(isDriverOnline) fetchAvailableTasks(); 
       } else {
         setActiveTask(transformTaskDataForFrontend(updatedOrderFromApi));
       }
     } catch (err) { 
-        showError(err.message || "Gabim gjatë përditësimit të statusit."); 
-        // Mund të duhet të rifreskosh activeTask për të marrë statusin e fundit nga serveri në rast gabimi
+        if (notificationContext?.showNotification) notificationContext.showNotification(err.message || "Gabim gjatë përditësimit të statusit.", "error"); 
         fetchActiveTask();
     } finally { 
         setIsLoading(prev => ({ ...prev, updateTaskStatus: false })); 
     }
-  };
+  }; // Dependencies for this are implicitly class members or stable hooks from AuthContext
   
   const totalEarnings = deliveryHistory.reduce((sum, task) => sum + (task.payout || 0), 0);
 
   useEffect(() => {
+    console.log("TaskContext useEffect triggered. isAuthenticated:", isAuthenticated, "User role:", user?.role, "isDriverOnline:", isDriverOnline, "Token present:", !!token);
     if (isAuthenticated && (user?.role === 'DRIVER' || user?.role === 'DELIVERY_PERSONNEL') && token) {
+      fetchActiveTask(); // Fetch active task regardless of online status initially
       if (isDriverOnline) {
-        fetchActiveTask();
         fetchAvailableTasks();
       } else {
         setAvailableTasks([]);
-        // Mos e bëj activeTask null këtu nëse shoferi bëhet offline, ai mund të dojë ta përfundojë.
-        // fetchActiveTask() do ta trajtojë këtë.
       }
       fetchDeliveryHistory();
     } else {
-      setAvailableTasks([]); setActiveTask(null); setDeliveryHistory([]); setIsDriverOnline(false);
+      setAvailableTasks([]); setActiveTask(null); setDeliveryHistory([]); setIsDriverOnline(user?.is_driver_available || false); // Reset isDriverOnline based on user profile if not auth
     }
-  }, [isAuthenticated, user, token, isDriverOnline, fetchAvailableTasks, fetchActiveTask, fetchDeliveryHistory]); // Shto isDriverOnline si dependencë
+  }, [isAuthenticated, user, token, isDriverOnline, fetchAvailableTasks, fetchActiveTask, fetchDeliveryHistory]);
 
   return (
     <TaskContext.Provider value={{

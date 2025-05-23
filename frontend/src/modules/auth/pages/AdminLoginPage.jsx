@@ -7,30 +7,30 @@ import { ShieldCheckIcon, XCircleIcon } from '@heroicons/react/24/solid';
 import { useNotification } from '../../../context/NotificationContext.jsx'; // Added for showError
 
 const AdminLoginPage = () => { 
-    const { adminLogin, loadingAuth, error: authError, setError: setAuthError, isAuthenticated, user } = useAuth();
+    const { adminLogin, loadingAuth, error: authError, setError: setAuthError, isAuthenticated, user, clearAuthError } = useAuth();
     const navigate = useNavigate();
-    const { showError } = useNotification(); // Get showError from context
+    const { showNotification } = useNotification(); // Changed from showError to showNotification for consistency
 
     const [email, setEmail] = useState(''); 
     const [password, setPassword] = useState(''); 
 
     useEffect(() => {
-        // Redirect if already authenticated as admin
+        // This useEffect can remain if it's only for redirecting an already authenticated admin
+        // who lands on this page, but the primary navigation after login happens in handleSubmit.
         if (isAuthenticated && user?.role === 'ADMIN') {
-            navigate('/admin/dashboard', { replace: true });
+            // navigate('/admin/dashboard', { replace: true }); // This might be too aggressive if page just loaded
         }
-        // Cleanup auth error on component unmount
         return () => {
-            if (setAuthError) setAuthError(null);
+            if (clearAuthError) clearAuthError(); // Use clearAuthError from context
         };
-    }, [isAuthenticated, user, navigate, setAuthError]);
+    }, [isAuthenticated, user, navigate, clearAuthError]); // Removed setAuthError, added clearAuthError
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         if(setAuthError) setAuthError(null); 
 
         if (!email || !password) {
-            showError("Ju lutem plotësoni email-in dhe fjalëkalimin.");
+            showNotification("Ju lutem plotësoni email-in dhe fjalëkalimin.", "error"); // Use showNotification
             return;
         }
 
@@ -38,26 +38,16 @@ const AdminLoginPage = () => {
             const loggedInUser = await adminLogin({ email, password }); 
             
             if (loggedInUser && loggedInUser.role === 'ADMIN') {
-                 // AuthContext's fetchAndSetUser and subsequent isAuthenticated update 
-                 // should trigger the useEffect for navigation.
-                 // Explicit navigation can be a fallback or primary method.
+                 showNotification('Kyçja si Admin u krye me sukses!', "success"); // Added success notification
                  navigate('/admin/dashboard', { replace: true });
             } else if (loggedInUser) {
-                // Logged in but not an admin
                 const message = 'Kyçja u krye, por ju nuk keni privilegje administratori.';
                 if(setAuthError) setAuthError(message);
-                showError(message);
-                // Consider logging out the user if they are not an admin
-                // await logout(); 
+                showNotification(message, "error"); // Use showNotification
             }
-            // If adminLogin fails, it should throw an error caught below,
-            // and AuthContext should set its own error state.
         } catch (err) {
-            // Error should be set by adminLogin in AuthContext.
-            // Display it via showError if not already handled by a global authError display.
             const displayMessage = authError || err.message || 'Gabim gjatë kyçjes së administratorit.';
-            showError(displayMessage); 
-            // Ensure authError in context is also set if not already
+            showNotification(displayMessage, "error"); 
             if (setAuthError && !authError) {
                  setAuthError(displayMessage);
             }

@@ -76,7 +76,7 @@ class Migration(migrations.Migration):
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
                 ('category', models.ForeignKey(help_text='Kategoria së cilës i përket ky artikull', on_delete=django.db.models.deletion.CASCADE, related_name='menu_items', to='api.menucategory')),
-                ('restaurant', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='all_menu_items_direct_link', to='api.restaurant')),
+                ('restaurant', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='all_menu_items', to='api.restaurant')),
             ],
             options={
                 'verbose_name': 'Artikull Menuje',

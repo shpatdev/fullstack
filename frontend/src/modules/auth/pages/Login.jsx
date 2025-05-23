@@ -10,57 +10,30 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false); // Për toggle të fjalëkalimit
-  const { login, loadingAuth, error: authError, setError: setAuthError, isAuthenticated, user } = useAuth();
+  const { login, isLoading: loadingAuth, error: authError, setError: setAuthError, isAuthenticated, user, clearAuthError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { showSuccess, showError } = useNotification(); // showError nga useNotification
+  const { showNotification } = useNotification(); // Correctly destructure showNotification
 
-  // const from = location.state?.from?.pathname || "/"; // Ku të kthehesh pas login-it // Keep for reference or remove if not used by new logic
-
+  // useEffect for clearing authError (e.g., on unmount or when setAuthError changes)
   useEffect(() => {
-    if (isAuthenticated && user) {
-        let targetPath = location.state?.from?.pathname;
-
-        // If 'from' is not specified, or is the login/auth page itself, or root, determine based on role
-        if (!targetPath || targetPath === "/" || targetPath.startsWith("/auth")) {
-            if (user.role === 'ADMIN') targetPath = '/admin/dashboard';
-            else if (user.role === 'RESTAURANT_OWNER') targetPath = '/restaurant/overview';
-            else if (user.role === 'DRIVER' || user.role === 'DELIVERY_PERSONNEL') targetPath = '/driver/dashboard';
-            else if (user.role === 'CUSTOMER') targetPath = '/customer/restaurants';
-            else targetPath = '/customer/restaurants'; // Default fallback
-        }
-        
-        // Avoid navigating if already on the target path or if targetPath is somehow still an auth path
-        if (location.pathname !== targetPath && !targetPath.startsWith("/auth")) {
-            console.log(`LOGIN_PAGE: Navigating to: ${targetPath} from ${location.pathname}`);
-            navigate(targetPath, { replace: true });
-        } else if (location.pathname === targetPath) {
-            console.warn(`LOGIN_PAGE: Already on target path ${targetPath}. Navigation skipped.`);
-        } else if (targetPath.startsWith("/auth")) {
-            console.warn(`LOGIN_PAGE: Target path ${targetPath} is an auth path. Redirecting to role default.`);
-            // Fallback to role default if targetPath is still an auth path
-            if (user.role === 'ADMIN') navigate('/admin/dashboard', { replace: true });
-            else if (user.role === 'RESTAURANT_OWNER') navigate('/restaurant/overview', { replace: true });
-            else if (user.role === 'DRIVER' || user.role === 'DELIVERY_PERSONNEL') navigate('/driver/dashboard', { replace: true });
-            else navigate('/customer/restaurants', { replace: true });
-        }
-    }
-  }, [isAuthenticated, user, navigate, location.state, location.pathname]); // Added location.pathname
-
-  useEffect(() => {
+    // This effect now primarily serves to clear the error when the component unmounts
+    // or if setAuthError itself changes (which is unlikely to be a dependency here).
+    // The previous logic for clearing on authError change was removed as it might conflict
+    // with displaying a new error.
     return () => {
-      if (setAuthError) { // Pastro gabimin e AuthContext kur komponenti çmontohet
-        setAuthError(null);
+      if (clearAuthError) { // Use clearAuthError from context
+        clearAuthError();
       }
     };
-  }, [setAuthError]);
+  }, [clearAuthError]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (setAuthError) setAuthError(null); 
+    if (setAuthError) setAuthError(null); // Clear previous auth errors from context
 
     if (!email || !password) {
-      showError("Ju lutem plotësoni email-in dhe fjalëkalimin.");
+      showNotification("Ju lutem plotësoni email-in dhe fjalëkalimin.", "error");
       return;
     }
     
@@ -68,14 +41,34 @@ const Login = () => {
       const userData = await login({ email, password }); 
       
       if (userData) { 
-        showSuccess('Kyçja u krye me sukses!');
-        // Navigation is now handled by the useEffect above based on isAuthenticated and user.
+        showNotification('Kyçja u krye me sukses!', "success");
+
+        const from = location.state?.from?.pathname || null;
+        let redirectTo = from;
+
+        // Prevent redirecting to auth pages or if 'from' is not set
+        if (!redirectTo || ['/auth/login', '/auth/register', '/auth/admin-login'].includes(from)) {
+            if (userData.role === 'ADMIN') {
+                redirectTo = '/admin/dashboard';
+            } else if (userData.role === 'RESTAURANT_OWNER') {
+                redirectTo = '/restaurant/overview';
+            } else if (userData.role === 'DRIVER' || userData.role === 'DELIVERY_PERSONNEL') {
+                redirectTo = '/driver/dashboard';
+            } else if (userData.role === 'CUSTOMER') {
+                redirectTo = '/customer/restaurants';
+            } else {
+                redirectTo = '/customer/restaurants'; // Default fallback
+            }
+        }
+        
+        console.log(`LOGIN_PAGE (handleSubmit Navigation): Navigating to: ${redirectTo} from ${location.pathname}`);
+        navigate(redirectTo, { replace: true });
       }
-      // No explicit navigation here, useEffect will handle it.
     } catch (err) {
-      // Gabimi tashmë duhet të jetë trajtuar dhe vendosur në AuthContext nga funksioni login i AuthContext
-      // showError(err.message || "Gabim gjatë kyçjes. Provoni përsëri."); // Ky mund të jetë redundant nëse AuthContext e bën
-      // AuthContext duhet të vendosë 'error' state, i cili do të shfaqet më poshtë
+      // Error is set by AuthContext's login function and displayed via authError state.
+      // showNotification can be used for additional feedback if needed, but authError is primary.
+      // showNotification(err.message || "Gabim gjatë kyçjes. Provoni përsëri.", "error");
+      console.error("Login page submit error:", err.message);
     }
   };
 

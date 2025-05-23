@@ -1,93 +1,94 @@
 // src/modules/customer/pages/CheckoutPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useCart } from "../../../context/CartContext.jsx";
 import { useAuth } from "../../../context/AuthContext.jsx";
 import { customerApi } from "../../../api/customerApi.js";
 import { useNotification } from "../../../context/NotificationContext.jsx";
 import Button from "../../../components/Button.jsx";
-import { MapPinIcon, PlusCircleIcon, CreditCardIcon, InformationCircleIcon, ShoppingCartIcon, XMarkIcon, ArrowPathIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import AddressCard from '../components/AddressCard.jsx'; 
 import AddressFormModal from '../components/AddressFormModal.jsx';
+import { PlusCircleIcon, PencilIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import OrderSummaryCard from '../components/OrderSummaryCard.jsx'; // SHTO KETE
 
 const CheckoutPage = () => {
-  const { cart, clearCart, getCartTotal, getCartItemsCount } = useCart(); // Merr clearCart dhe refetchCartContext
-  const { user, token } = useAuth(); // Merr token
-  const { showSuccess, showError } = useNotification();
+  const { cart, fetchCart, getCartTotalAmount, getCartItemCount } = useCart();
+  const { user, token: userToken, isAuthenticated } = useAuth(); // Assuming user object contains id
+  const userId = user?.id;
+  const { showNotification } = useNotification(); // Assuming useNotification provides a stable showNotification
   const navigate = useNavigate();
   const location = useLocation();
 
   const [addresses, setAddresses] = useState([]);
+  const [isLoadingAddresses, setIsLoadingAddresses] = useState(true);
   const [selectedAddressId, setSelectedAddressId] = useState('');
-  // const [showAddressForm, setShowAddressForm] = useState(false); // Zëvendësohet
-  const [showAddressFormModal, setShowAddressFormModal] = useState(false); // SHTO KËTË
+  const [showAddressFormModal, setShowAddressFormModal] = useState(false);
   const [editingAddress, setEditingAddress] = useState(null);
-  const [isLoadingAddresses, setIsLoadingAddresses] = useState(true); // Ndryshuar emri
+  const [deliveryNotes, setDeliveryNotes] = useState('');
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
-  const [deliveryNotes, setDeliveryNotes] = useState(''); // Për shënimet e dërgesës
-  const [isLoadingOrder, setIsLoadingOrder] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('CASH_ON_DELIVERY');
 
+  const restaurantDataForCart = cart.restaurant_details;
+  const deliveryFee = parseFloat(restaurantDataForCart?.delivery_fee_placeholder || 2.00);
+  const subtotal = getCartTotalAmount();
+  const total = subtotal + deliveryFee;
 
-  const fetchAddresses = useCallback(async () => {
-    if (!user?.id || !token) {
+  // Add this log to see when fetchAddressesCallback is re-created
+  // console.log("CheckoutPage: Defining fetchAddressesCallback function object");
+
+  const fetchAddressesCallback = useCallback(async () => {
+    // console.log("CheckoutPage: fetchAddressesCallback RECREATED or CALLED. UserID:", userId, "Token:", userToken); // More detailed log
+    if (!userId || !userToken) {
         setIsLoadingAddresses(false);
         return;
     }
     setIsLoadingAddresses(true);
     try {
+      console.log("CheckoutPage: Attempting to fetch addresses with customerApi.fetchUserAddresses");
       const userAddresses = await customerApi.fetchUserAddresses();
       setAddresses(userAddresses || []);
-      const defaultAddress = userAddresses.find(addr => addr.is_default_shipping);
+      const defaultAddress = (userAddresses || []).find(addr => addr.is_default_shipping);
       if (defaultAddress) {
         setSelectedAddressId(defaultAddress.id.toString());
-      } else if (userAddresses.length > 0) {
+      } else if (userAddresses?.length > 0) {
         setSelectedAddressId(userAddresses[0].id.toString());
       } else {
-        setShowAddressFormModal(true); // Hap formularin nëse nuk ka adresa
+        // setShowAddressFormModal(true); // Consider if this should always happen or only if no addresses and cart not empty
       }
     } catch (error) {
-      showError(error.message || "Nuk mund të ngarkoheshin adresat.");
+      showNotification(error.message || "Nuk mund të ngarkoheshin adresat.", "error");
     } finally {
       setIsLoadingAddresses(false);
     }
-  }, [user?.id, token, showError]);
+  }, [userId, userToken, showNotification, setIsLoadingAddresses]); // Added setIsLoadingAddresses if it's a setState from this component
 
   useEffect(() => {
-    if (user) {
-      fetchAddresses();
-    } else {
-      setIsLoadingAddresses(false);
-      // Consider redirecting to login or showing a message if user is not logged in
+    console.log("CheckoutPage Addresses useEffect - MOUNTING/UPDATING. IsAuthenticated:", isAuthenticated, "UserID:", userId, "UserToken:", userToken);
+    if (isAuthenticated && userId && userToken) {
+        fetchAddressesCallback();
     }
-  }, [user, fetchAddresses]);
+    return () => {
+        console.log("CheckoutPage Addresses useEffect - UNMOUNTING/CLEANUP");
+    };
+  }, [isAuthenticated, userId, userToken, fetchAddressesCallback]);
   
-  useEffect(() => {
-    // Pre-select the default shipping address if available
-    const defaultAddress = addresses.find(addr => addr.is_default_shipping);
-    if (defaultAddress) {
-      setSelectedAddressId(defaultAddress.id.toString());
-    } else if (addresses.length > 0) {
-      setSelectedAddressId(addresses[0].id.toString()); // Select the first one if no default
-    }
-  }, [addresses]);
-
-
   const handleAddressSaveViaModal = async (addressDataFromForm, addressIdToUpdate = null) => {
-    setIsLoadingAddresses(true); // Ose një state të veçantë për ruajtjen e adresës
+    setIsLoadingAddresses(true); 
     try {
         let savedAddress;
         if (addressIdToUpdate) {
             savedAddress = await customerApi.updateUserAddress(addressIdToUpdate, addressDataFromForm);
-            showSuccess("Adresa u përditësua me sukses!");
+            showNotification("Adresa u përditësua me sukses!", "success"); // PERDORE showNotification
         } else {
             savedAddress = await customerApi.createUserAddress(addressDataFromForm);
-            showSuccess("Adresa u shtua me sukses!");
+            showNotification("Adresa u shtua me sukses!", "success"); // PERDORE showNotification
         }
-        fetchAddresses(); // Rifresko listën e adresave
-        setSelectedAddressId(savedAddress.id.toString()); // Zgjidh adresën e re/përditësuar
-        setShowAddressFormModal(false); // Mbyll modalin
+        await fetchAddressesCallback(); 
+        setSelectedAddressId(savedAddress.id.toString());
+        setShowAddressFormModal(false);
         setEditingAddress(null);
     } catch (error) {
-        showError(error.message || "Gabim gjatë ruajtjes së adresës.");
+        showNotification(error.message || "Gabim gjatë ruajtjes së adresës.", "error"); // PERDORE showNotification
     } finally {
         setIsLoadingAddresses(false);
     }
@@ -103,13 +104,13 @@ const CheckoutPage = () => {
       setIsLoadingAddresses(true);
       try {
         await customerApi.deleteUserAddress(addressId);
-        showSuccess("Adresa u fshi me sukses!");
-        fetchAddresses(); // Refresh list
+        showNotification("Adresa u fshi me sukses!", "success"); // PERDORE showNotification
+        await fetchAddressesCallback(); 
         if (selectedAddressId === addressId.toString()) {
-          setSelectedAddressId(''); // Clear selection if deleted address was selected
+          setSelectedAddressId(''); 
         }
       } catch (error) {
-        showError(error.message || "Gabim gjatë fshirjes së adresës.");
+        showNotification(error.message || "Gabim gjatë fshirjes së adresës.", "error"); // PERDORE showNotification
       } finally {
         setIsLoadingAddresses(false);
       }
@@ -117,81 +118,57 @@ const CheckoutPage = () => {
   };
   
   const handlePlaceOrder = async () => {
-    if (cart.items.length === 0) {
-        showError("Shporta është bosh.");
+    if (!cart || cart.items.length === 0) {
+        showNotification("Shporta është bosh.", "error");
         return;
     }
     if (!selectedAddressId) {
-      showError("Ju lutem zgjidhni ose shtoni një adresë dërgese.");
+      showNotification("Ju lutem zgjidhni ose shtoni një adresë dërgese.", "error");
       return;
     }
     
-    const selectedAddressDetails = addresses.find(addr => addr.id.toString() === selectedAddressId);
-    if (!selectedAddressDetails) {
-        showError("Detajet e adresës së zgjedhur nuk u gjetën.");
-        return;
-    }
-
-    // Supozojmë se të gjithë artikujt janë nga i njëjti restorant për thjeshtësi
-    const restaurantId = cart.items[0]?.menu_item_details?.restaurant_id_placeholder || cart.items[0]?.menu_item_details?.restaurant; // Provo të marrësh ID e restorantit
-    if (!restaurantId) {
-        showError("Nuk mund të përcaktohej restoranti. Sigurohuni që artikujt e shportës kanë informacionin e restorantit.");
+    const restaurantIdForOrder = cart.restaurant; 
+    if (!restaurantIdForOrder) {
+        showNotification("Nuk mund të përcaktohej restoranti për porosinë. Provoni të rifreskoni shportën.", "error");
         return;
     }
 
     setIsPlacingOrder(true);
-    setIsLoadingOrder(true); // Shto këtë linjë
     try {
       const orderPayload = {
-        restaurant_id: parseInt(restaurantId), // Sigurohu që është integer
+        restaurant_id: parseInt(restaurantIdForOrder),
         delivery_address_id: parseInt(selectedAddressId),
         payment_method: paymentMethod,
-        delivery_address_notes: deliveryNotes, // Shto shënimet
-        items: cart.items.map(item => ({
-          menu_item: item.menu_item, // ID e menu_item
-          quantity: item.quantity
-        })),
+        delivery_address_notes: deliveryNotes,
       };
 
       const newOrder = await customerApi.createOrder(orderPayload);
-      showSuccess(`Porosia #${newOrder.id} u krijua me sukses!`);
-      await customerApi.clearUserCartMock(); // Pastro shportën mock (ose thirr API reale nëse e ke)
-      await refetchCartContext(); // Rifresko kontekstin e shportës
-      navigate(`/customer/order-confirmation/${newOrder.id}`);
+      showNotification(`Porosia #${newOrder.id} u krijua me sukses!`, "success");
+      await fetchCart(); 
+      navigate(`/customer/order-confirmation/${newOrder.id}`, { state: { orderDetails: newOrder } });
     } catch (error) {
       console.error("CheckoutPage: Failed to place order:", error);
-      showError(error.response?.data?.detail || error.message || "Gabim gjatë krijimit të porosisë.");
-      setIsPlacingOrder(false);
+      showNotification(error.response?.data?.detail || error.message || "Gabim gjatë krijimit të porosisë.", "error");
+    } finally {
+      setIsPlacingOrder(false); 
     }
-    // Nuk ka finally këtu pasi navigimi ndodh në sukses
   };
   
-  const deliveryFee = cart.items.length > 0 ? 2.00 : 0;
-  const subtotal = cart.items.reduce((sum, item) => sum + parseFloat(item.menu_item_details?.price || 0) * item.quantity, 0);
-  const total = subtotal + deliveryFee;
-
-  if (!user) {
-    return (
-      <div className="container mx-auto px-4 py-8 text-center">
-        <InformationCircleIcon className="h-12 w-12 text-primary-500 mx-auto mb-4" />
-        <h1 className="text-2xl font-semibold mb-2">Ju lutem identifikohuni</h1>
-        <p className="text-gray-600 dark:text-slate-300 mb-6">Për të vazhduar me porosinë, ju duhet të identifikoheni ose të krijoni një llogari.</p>
-        <Button onClick={() => navigate('/login', { state: { from: location }})} variant="primary" size="lg">
-          Identifikohu
-        </Button>
-      </div>
-    );
+  if (!isAuthenticated && !isLoadingAddresses && !cart?.items?.length) { 
+      // If not authenticated, not loading addresses, and cart is empty, redirect to home or login.
+      // This check is to prevent rendering checkout page if user lands here unauthenticated without items.
+      return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (cart.length === 0 && !isLoadingOrder) {
+
+  if (isLoadingAddresses && addresses.length === 0) { // Show loader only if addresses are truly being fetched for the first time or empty
     return (
       <div className="container mx-auto py-10 text-center">
-        <ShoppingCartIcon className="h-20 w-20 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-2">Shporta juaj është bosh.</h2>
-        <p className="text-gray-500 dark:text-slate-400 mb-6">Ju lutem shtoni artikuj në shportë para se të vazhdoni me pagesën.</p>
-        <Button onClick={() => navigate('/customer/restaurants')} variant="primary">
-          Kthehu te Restorantet
-        </Button>
+        <svg className="animate-spin h-10 w-10 mx-auto mb-4 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4zm16 0a8 8 0 01-8 8v-8h8z"></path>
+        </svg>
+        <p className="text-lg font-semibold text-gray-700 dark:text-slate-200">Duke ngarkuar adresat...</p>
       </div>
     );
   }
@@ -200,55 +177,45 @@ const CheckoutPage = () => {
     <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
       <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white mb-6 sm:mb-8 text-center">Përfundo Porosinë</h1>
       
-      {isLoadingOrder && (
+      {isPlacingOrder && ( 
         <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-slate-800 p-8 rounded-lg shadow-xl text-center">
-            <ArrowPathIcon className="h-12 w-12 text-primary-500 animate-spin mx-auto mb-4" />
+            <svg className="h-12 w-12 text-primary-500 animate-spin mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4zm16 0a8 8 0 01-8 8v-8h8z"></path>
+            </svg>
             <p className="text-lg font-semibold text-gray-700 dark:text-slate-200">Duke procesuar porosinë...</p>
           </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
-        {/* Order Summary - Left Column (or Top on Mobile) */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Shipping Address Section */}
           <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 sm:p-6">
             <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-4 flex items-center">
-              <MapPinIcon className="h-6 w-6 mr-2 text-primary-500" /> Adresa e Dërgesës
+              <svg className="h-6 w-6 mr-2 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18M9 10v11M15 10v11" />
+              </svg>
+              Adresa e Dërgesës
             </h2>
-            {isLoadingAddresses && <ArrowPathIcon className="h-6 w-6 animate-spin text-primary-500 my-4" />}
+            {isLoadingAddresses && <svg className="h-6 w-6 animate-spin text-primary-500 my-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4zm16 0a8 8 0 01-8 8v-8h8z"></path>
+            </svg>}
             {!isLoadingAddresses && addresses.length === 0 && !showAddressFormModal && (
               <p className="text-gray-500 dark:text-slate-400">Nuk keni adresa të ruajtura.</p>
             )}
             {!isLoadingAddresses && addresses.length > 0 && (
               <div className="space-y-3 mb-4">
                 {addresses.map((address) => (
-                  <div 
-                    key={address.id} 
-                    className={`p-3 border rounded-lg cursor-pointer transition-all
-                                ${selectedAddressId === address.id.toString() ? 'border-primary-500 ring-2 ring-primary-500 bg-primary-50 dark:bg-primary-500/10' : 'border-gray-300 dark:border-slate-700 hover:border-primary-300 dark:hover:border-primary-600'}`}
-                    onClick={() => setSelectedAddressId(address.id.toString())}
-                  >
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <p className="font-medium text-gray-800 dark:text-slate-100">{address.street}</p>
-                            <p className="text-sm text-gray-600 dark:text-slate-300">{address.city}, {address.postal_code}</p>
-                            <p className="text-xs text-gray-500 dark:text-slate-400">{address.country}</p>
-                        </div>
-                        <div className="flex-shrink-0 space-x-1">
-                            <Button variant="icon" size="sm" onClick={(e) => { e.stopPropagation(); handleEditAddress(address);}} title="Modifiko">
-                                <PencilIcon className="h-4 w-4 text-blue-500"/>
-                            </Button>
-                            <Button variant="icon" size="sm" onClick={(e) => { e.stopPropagation(); handleDeleteAddress(address.id);}} title="Fshij">
-                                <TrashIcon className="h-4 w-4 text-red-500"/>
-                            </Button>
-                        </div>
-                    </div>
-                    {address.is_default_shipping && (
-                      <span className="mt-1 inline-block text-xs bg-blue-100 text-blue-700 dark:bg-blue-700 dark:text-blue-200 px-1.5 py-0.5 rounded-full">Primare</span>
-                    )}
-                  </div>
+                  <AddressCard
+                    key={address.id}
+                    address={address}
+                    isSelected={selectedAddressId === address.id.toString()}
+                    onSelect={() => setSelectedAddressId(address.id.toString())}
+                    onEdit={handleEditAddress}
+                    onDelete={handleDeleteAddress}
+                  />
                 ))}
               </div>
             )}
@@ -257,104 +224,87 @@ const CheckoutPage = () => {
                 size="md" 
                 onClick={() => { setShowAddressFormModal(!showAddressFormModal); setEditingAddress(null); }} 
                 className="mt-1 w-full sm:w-auto"
-                iconLeft={showAddressFormModal ? <XMarkIcon className="h-5 w-5"/> : <PlusCircleIcon className="h-5 w-5"/>}
+                iconLeft={showAddressFormModal ? XMarkIcon : PlusCircleIcon}
+                iconLeftClassName="h-5 w-5"
             >
               {showAddressFormModal ? (editingAddress ? 'Anulo Modifikimin' : 'Anulo Shto Adresë') : 'Shto Adresë të Re'}
             </Button>
-
-            {/* Nuk ka më AddressForm direkt këtu, por AddressFormModal */}
             <AddressFormModal
                 isOpen={showAddressFormModal}
                 onClose={() => { setShowAddressFormModal(false); setEditingAddress(null); }}
-                onSaveAddress={handleAddressSaveViaModal} // Ky thërret API-në
+                onSaveAddress={handleAddressSaveViaModal} 
                 existingAddress={editingAddress}
-                // userId={user.id} // Nuk nevojitet pasi API call bëhet këtu
             />
           </div>
 
-          {/* Payment Method Section */}
           <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 sm:p-6">
             <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-4 flex items-center">
-              <CreditCardIcon className="h-6 w-6 mr-2.5 text-primary-500 dark:text-primary-400" /> Metoda e Pagesës
+                <svg className="h-6 w-6 mr-2 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8m4-4H8" />
+                </svg>
+                Metoda e Pagesës
             </h2>
-            <div className="mt-4 space-y-3">
+             <div className="mt-4 space-y-3">
               <div onClick={() => setPaymentMethod('CASH_ON_DELIVERY')}
                 className={`p-3 sm:p-4 border rounded-lg cursor-pointer transition-all flex items-center justify-between ${paymentMethod === 'CASH_ON_DELIVERY' ? 'border-primary-500 ring-2 ring-primary-500/70 bg-primary-50 dark:bg-primary-500/10 dark:border-primary-500' : 'border-gray-300 dark:border-slate-600 hover:border-primary-400 dark:hover:border-primary-500/70'}`}>
                 <div className="flex items-center">
-                  <HeroIcon icon="CurrencyEuroIcon" className="h-5 w-5 mr-3 text-gray-500 dark:text-slate-400" />
+                  <svg className="h-5 w-5 mr-3 text-gray-500 dark:text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18M9 10v11M15 10v11" />
+                  </svg>
                   <div>
                     <p className="font-semibold text-sm text-gray-800 dark:text-slate-100">Para në Dorë</p>
                     <p className="text-xs text-gray-500 dark:text-slate-400">Paguani kur të merrni porosinë.</p>
                   </div>
                 </div>
-                   {paymentMethod === 'CASH_ON_DELIVERY' && <HeroIcon icon="CheckCircleIcon" className="h-6 w-6 text-primary-500" />}
-              </div>
-              <div className="p-3 sm:p-4 border rounded-lg cursor-not-allowed bg-gray-100 dark:bg-slate-700/50 border-gray-300 dark:border-slate-600 opacity-60 flex items-center justify-between">
-                 <div className="flex items-center">
-                  <HeroIcon icon="CreditCardIcon" className="h-5 w-5 mr-3 text-gray-400 dark:text-slate-500" />
-                  <div>
-                    <p className="font-semibold text-sm text-gray-500 dark:text-slate-400">Pagesë Online me Kartë</p>
-                    <p className="text-xs text-gray-400 dark:text-slate-500">Së shpejti...</p>
-                  </div>
-                </div>
+                   {paymentMethod === 'CASH_ON_DELIVERY' && <svg className="h-6 w-6 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2l4 -4" />
+                    </svg>}
               </div>
             </div>
           </div>
+          
+           <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 sm:p-6">
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-4 flex items-center">
+                <svg className="h-6 w-6 mr-2 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+                </svg>
+                Shënime për Dërgesën (Opsionale)
+            </h2>
+            <textarea 
+                value={deliveryNotes}
+                onChange={(e) => setDeliveryNotes(e.target.value)}
+                rows="3"
+                className="input-form w-full"
+                placeholder="P.sh. Lëreni te dera, mos bini ziles, etj."
+            />
+          </div>
+
         </div>
 
-        {/* Cart Details - Right Column (or Bottom on Mobile) */}
         <div className="lg:col-span-1">
           <div className="bg-white dark:bg-slate-800 shadow-lg rounded-xl p-5 sm:p-6 sticky top-24">
             <h2 className="text-xl font-semibold text-gray-700 dark:text-slate-200 mb-4 flex items-center">
-              <ShoppingCartIcon className="h-6 w-6 mr-2 text-primary-500" /> Përmbledhja e Shportës
+              <svg className="h-6 w-6 mr-2 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18M9 10v11M15 10v11" />
+              </svg>
+              Përmbledhja e Shportës
             </h2>
-            <div className="space-y-4">
-              {cart.items.length === 0 ? (
-                <p className="text-center text-gray-500 dark:text-slate-400 py-4">Shporta juaj është bosh.</p>
-              ) : (
-                cart.items.map(item => (
-                  <div key={item.id} className="flex justify-between items-center p-3 sm:p-4 border-b border-gray-200 dark:border-slate-700">
-                    <div className="flex items-center">
-                      <img src={item.menu_item_details?.image_url} alt={item.menu_item_details?.name} className="w-16 h-16 object-cover rounded-md mr-3" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-800 dark:text-slate-200">{item.menu_item_details?.name}</p>
-                        <p className="text-xs text-gray-500 dark:text-slate-400">{item.quantity}x - {parseFloat(item.menu_item_details?.price).toFixed(2)}€</p>
-                      </div>
-                    </div>
-                    <div className="flex-shrink-0">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">{(item.quantity * parseFloat(item.menu_item_details?.price)).toFixed(2)}€</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
-              <div className="flex justify-between text-sm font-medium text-gray-700 dark:text-slate-300">
-                <span>Subtotal ({cart.items.length} artikuj)</span>
-                <span>{subtotal.toFixed(2)}€</span>
-              </div>
-              <div className="flex justify-between text-sm font-medium text-gray-700 dark:text-slate-300">
-                <span>Taksat dhe Tarifet</span>
-                <span>0.00€</span>
-              </div>
-              <div className="flex justify-between text-sm font-medium text-gray-700 dark:text-slate-300">
-                <span>Tarifa e Dërgesës</span>
-                <span>{deliveryFee.toFixed(2)}€</span>
-              </div>
-              <div className="flex justify-between text-lg font-semibold text-gray-800 dark:text-slate-200 mt-2">
-                <span>Total</span>
-                <span>{total.toFixed(2)}€</span>
-              </div>
-            </div>
+            {/* === NDRYSHO KETU === */}
+            <OrderSummaryCard 
+                cart={cart} 
+                deliveryFee={deliveryFee} 
+                // getCartItemCount={getCartItemCount} // Pass if needed by OrderSummaryCard
+                // getCartTotalAmount={getCartTotalAmount} // Pass if needed by OrderSummaryCard
+            />
             <Button 
               onClick={handlePlaceOrder} 
               variant="primary" 
               size="lg" 
-              className="mt-4 w-full"
-              isLoading={isPlacingOrder}
-              disabled={isPlacingOrder || !selectedAddressId || cart.items.length === 0 || isLoadingAddresses}
+              className="mt-6 w-full"
+              isLoading={isPlacingOrder || isLoadingAddresses}
+              disabled={isPlacingOrder || !selectedAddressId || !cart || cart.items.length === 0 || isLoadingAddresses}
             >
-              {isPlacingOrder ? 'Duke përfunduar...' : 'Përfundo Porosinë'}
+              {isPlacingOrder ? 'Duke Përfunduar...' : `Përfundo Porosinë (${total.toFixed(2)}€)`}
             </Button>
           </div>
         </div>
