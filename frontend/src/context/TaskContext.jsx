@@ -1,208 +1,251 @@
 // src/context/TaskContext.jsx
-import React, { createContext, useState, useEffect, useCallback, useContext } from 'react';
-import { courierApi } from '../api/courierApi.js'; // Korrigjo path-in
-import { useAuth } from './AuthContext.jsx';   // Përdor useAuth
-import { useNotification } from './NotificationContext.jsx'; // Supozojmë global
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import { courierApi } from '../api/courierApi.js'; // Sigurohu që path-i është korrekt
+import { useAuth } from './AuthContext.jsx';      // Sigurohu që path-i është korrekt
+import { useNotification } from './NotificationContext.jsx'; // Sigurohu që path-i është korrekt
 
 const TaskContext = createContext(null);
 
 export const TaskProvider = ({ children }) => {
-  const { token, agent } = useAuth(); 
-  const { showNotification } = useNotification();
-  
+  const { user, isAuthenticated, token, fetchAndSetUser } = useAuth();
+  const { showSuccess, showError } = useNotification(); // Hiq showInfo nëse nuk e përdor
+
   const [availableTasks, setAvailableTasks] = useState([]);
-  const [activeTask, setActiveTask] = useState(null); 
-  const [deliveryHistory, setDeliveryHistory] = useState([]);
-  const [totalEarnings, setTotalEarnings] = useState(0);
+  const [activeTask, setActiveTask] = useState(null); // Ky do të mbajë formatin që pret ActiveDeliverySection
+  const [deliveryHistory, setDeliveryHistory] = useState([]); // Ky do të mbajë formatin që pret DeliveryHistorySection
   
-  const [isLoadingTasks, setIsLoadingTasks] = useState(false); 
-  const [isLoadingActiveTask, setIsLoadingActiveTask] = useState(false);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  // Supozojmë se user objekti nga AuthContext ka një fushë 'is_driver_available' ose të ngjashme
+  // Përshtate këtë me modelin tënd real të User/DriverProfile në Django.
+  const [isDriverOnline, setIsDriverOnline] = useState(user?.is_driver_available || false); 
 
-  const mapBackendStatusToFrontend = useCallback((backendStatus) => {
-    if (!backendStatus) return 'unknown';
-    const statusMap = {
-        "READY_FOR_PICKUP": "awaiting_acceptance",
-        "CONFIRMED": "assigned", 
-        "PICKED_UP": "picked_up",
-        "ON_THE_WAY": "en_route",
-        "DELIVERED": "delivered",
-        "CANCELLED_BY_USER": "cancelled",
-        "CANCELLED_BY_RESTAURANT": "cancelled",
-        "CANCELLED_BY_DRIVER": "cancelled",
-        "FAILED": "cancelled",
-    };
-    return statusMap[backendStatus.toUpperCase()] || backendStatus.toLowerCase();
-  }, []);
+  const [isLoading, setIsLoading] = useState({
+    availableTasks: false, // Për listën e detyrave të disponueshme
+    activeTask: false,     // Për detyrën aktive
+    deliveryHistory: false,// Për historikun
+    availabilityToggle: false, // Për ndryshimin e statusit online/offline
+    acceptTask: false,         // Kur pranohet një detyrë
+    updateTaskStatus: false,   // Kur përditësohet statusi i detyrës aktive
+    taskIdBeingAccepted: null, // Për të treguar loading te butoni specifik i pranimit
+  });
+  // const [error, setError] = useState(null); // Gabimet trajtohen me showError
 
-  const transformApiOrderToFrontendTask = useCallback((apiOrder) => {
-    if (!apiOrder) return null;
+  const transformTaskDataForFrontend = (taskDataFromApi) => {
+    if (!taskDataFromApi || !taskDataFromApi.id) return null;
+    // Ky funksion transformon përgjigjen e API-së në formatin që presin komponentët
+    // ActiveDeliverySection dhe AvailableTasksSection.TaskCard
+    // Përshtate fushat bazuar në atë që kthen API-ja jote reale.
     return {
-        id: apiOrder.id.toString(), 
-        orderId: `#ORD-${apiOrder.id}`,
-        payout: parseFloat(apiOrder.total_amount || 0), 
-        restaurantName: apiOrder.restaurant_details?.name || 'N/A',
-        restaurantAddress: apiOrder.restaurant_details?.address || 'N/A',
-        // Për customerName, backend-i yt duhet ta dërgojë te OrderSerializer -> user_details
-        customerName: apiOrder.user_details?.username || "Customer", 
-        customerAddress: `${apiOrder.delivery_address_street || ''}, ${apiOrder.delivery_address_city || ''}`,
-        itemsSummary: apiOrder.items?.map(item => `${item.quantity}x ${item.menu_item_name_at_purchase}`).join(', ') || "N/A",
-        status: mapBackendStatusToFrontend(apiOrder.status), 
-        deliveryInstructions: apiOrder.delivery_instructions,
-        agentId: apiOrder.driver, 
+        id: taskDataFromApi.id, // ID e porosisë, përdoret si key dhe për veprime
+        orderId: taskDataFromApi.id, // Përputhje me ActiveDeliverySection
+        status: taskDataFromApi.status?.toLowerCase().replace(/_/g, ' ') || 'unknown', // P.sh., 'assigned', 'picked up'
+        
+        restaurantName: taskDataFromApi.restaurant?.name || 'Restorant i Panjohur',
+        restaurantAddress: taskDataFromApi.restaurant?.address_details?.street 
+                           ? `${taskDataFromApi.restaurant.address_details.street}, ${taskDataFromApi.restaurant.address_details.city}`
+                           : (taskDataFromApi.restaurant?.address || 'Adresë e Panjohur'),
+        
+        customerName: taskDataFromApi.customer?.full_name || taskDataFromApi.customer?.email || 'Klient i Panjohur',
+        customerAddress: `${taskDataFromApi.delivery_address_street || 'Rrugë e Panjohur'}, ${taskDataFromApi.delivery_address_city || 'Qytet i Panjohur'}`,
+        
+        itemsSummary: taskDataFromApi.items?.map(item => `${item.quantity}x ${item.item_name_at_purchase}`).join(', ') || 'Pa artikuj',
+        deliveryInstructions: taskDataFromApi.delivery_address_notes || null,
+        
+        // Për AvailableTasksSection.TaskCard (nga API-ja e /orders/available-for-driver/)
+        restaurant_details: { 
+            name: taskDataFromApi.restaurant?.name || 'N/A',
+            address: taskDataFromApi.restaurant?.address_details?.street 
+                     ? `${taskDataFromApi.restaurant.address_details.street}, ${taskDataFromApi.restaurant.address_details.city}`
+                     : (taskDataFromApi.restaurant?.address || 'N/A'),
+        },
+        delivery_address_street: taskDataFromApi.delivery_address_street || '',
+        delivery_address_city: taskDataFromApi.delivery_address_city || '',
+        total_amount: parseFloat(taskDataFromApi.order_total || 0).toFixed(2),
+
+        // Për ActiveDeliverySection dhe DeliveryHistorySection (payout)
+        payout: parseFloat(taskDataFromApi.driver_payout || (parseFloat(taskDataFromApi.order_total || 0) * 0.08) || 0), // Shembull: 8% payout, ose merr nga API
+        
+        // Për DeliveryHistorySection (date)
+        date: taskDataFromApi.actual_delivery_time || taskDataFromApi.updated_at || taskDataFromApi.created_at,
     };
-  }, [mapBackendStatusToFrontend]);
+  };
+
 
   const fetchAvailableTasks = useCallback(async () => {
-    if (!token || !agent?.isOnline) { 
-      setAvailableTasks([]); return;
+    if (!isAuthenticated || !(user?.role === 'DRIVER' || user?.role === 'DELIVERY_PERSONNEL') || !isDriverOnline || !token) {
+        setAvailableTasks([]); return;
     }
-    setIsLoadingTasks(true);
+    setIsLoading(prev => ({ ...prev, availableTasks: true }));
     try {
-      const tasksFromApi = await courierApi.getAvailableTasks(token); 
-      const transformedTasks = tasksFromApi.map(transformApiOrderToFrontendTask);
-      setAvailableTasks(transformedTasks.filter(t => t && (!activeTask || t.id !== activeTask.id))); 
-    } catch (error) {
-      showNotification('Failed to fetch available tasks: ' + error.message, 'error');
-      setAvailableTasks([]);
-    } finally { setIsLoadingTasks(false); }
-  }, [token, agent?.isOnline, activeTask, showNotification, transformApiOrderToFrontendTask]);
+      const tasksFromApi = await courierApi.getAvailableTasks(); // Supozon se kthen një array
+      setAvailableTasks((tasksFromApi || []).map(transformTaskDataForFrontend).filter(Boolean));
+    } catch (err) { 
+        showError(err.message || "S'u mund të ngarkoheshin detyrat e disponueshme."); 
+        setAvailableTasks([]); 
+    } finally { 
+        setIsLoading(prev => ({ ...prev, availableTasks: false })); 
+    }
+  }, [isAuthenticated, user, isDriverOnline, token, showError]);
 
-  const fetchActiveTaskOnLoad = useCallback(async () => {
-    if (!token || !agent?.id) { // agent.id këtu duhet të jetë DriverProfile ID
-        setActiveTask(null); 
-        setIsLoadingActiveTask(false); // Sigurohu që loading ndalon
-        return;
+  const fetchActiveTask = useCallback(async () => {
+    if (!isAuthenticated || !(user?.role === 'DRIVER' || user?.role === 'DELIVERY_PERSONNEL') || !token) {
+        setActiveTask(null); return;
     }
-    setIsLoadingActiveTask(true);
+    setIsLoading(prev => ({ ...prev, activeTask: true }));
     try {
-        const activeTasksFromApi = await courierApi.getCurrentActiveTask(agent.id, token); 
-        if (activeTasksFromApi && activeTasksFromApi.length > 0) {
-            setActiveTask(transformApiOrderToFrontendTask(activeTasksFromApi[0]));
-        } else { setActiveTask(null); }
-    } catch (error) {
-        showNotification('Failed to fetch active task: ' + error.message, 'error');
-        setActiveTask(null);
-    } finally { setIsLoadingActiveTask(false); }
-  }, [token, agent?.id, showNotification, transformApiOrderToFrontendTask]);
+      const taskDataFromApi = await courierApi.getMyCurrentActiveTask(); // API kthen një objekt të vetëm ose null/404
+      setActiveTask(transformTaskDataForFrontend(taskDataFromApi));
+    } catch (err) { 
+        // Zakonisht 404 nëse nuk ka detyrë aktive, nuk është gabim kritik
+        if (err.response && err.response.status === 404) {
+            setActiveTask(null);
+        } else {
+            console.warn("TaskContext: Problem në marrjen e detyrës aktive:", err.message);
+            setActiveTask(null);
+        }
+    } finally { 
+        setIsLoading(prev => ({ ...prev, activeTask: false })); 
+    }
+  }, [isAuthenticated, user, token]);
 
   const fetchDeliveryHistory = useCallback(async () => {
-    if (!token || !agent?.id) {
-      setDeliveryHistory([]); setTotalEarnings(0);
-      return;
+    if (!isAuthenticated || !(user?.role === 'DRIVER' || user?.role === 'DELIVERY_PERSONNEL') || !token) {
+        setDeliveryHistory([]); return;
     }
-    setIsLoadingHistory(true);
+    setIsLoading(prev => ({ ...prev, deliveryHistory: true }));
     try {
-      const historyFromApi = await courierApi.getAgentDeliveryHistory(agent.id, token); 
-      const transformedHistory = historyFromApi.map(histItem => ({
-        id: `HIST-${histItem.id || Date.now()}-${Math.random()}`, // Siguro ID unike për key
-        orderId: `#ORD-${histItem.id}`, 
-        date: histItem.delivered_time || histItem.created_at || new Date().toISOString(), 
-        restaurantName: histItem.restaurant_details?.name || 'N/A',
-        customerName: histItem.user_details?.username || "Customer",
-        payout: parseFloat(histItem.total_amount || 0), 
-        status: mapBackendStatusToFrontend(histItem.status), 
-      }));
-      setDeliveryHistory(transformedHistory.sort((a,b) => new Date(b.date) - new Date(a.date))); // Rendit sipas datës
-      const earnings = transformedHistory.filter(task => task.status === 'delivered').reduce((sum, task) => sum + task.payout, 0);
-      setTotalEarnings(earnings);
-    } catch (error) {
-      showNotification('Failed to fetch delivery history: ' + error.message, 'error');
-    } finally { setIsLoadingHistory(false); }
-  }, [token, agent?.id, showNotification, mapBackendStatusToFrontend]);
-  
-  useEffect(() => {
-    if (agent?.id && token) {
-        fetchActiveTaskOnLoad(); 
-        fetchDeliveryHistory();
-    } else {
-        setActiveTask(null); setAvailableTasks([]); setDeliveryHistory([]); setTotalEarnings(0);
+      const historyFromApi = await courierApi.getDriverDeliveryHistory();
+      setDeliveryHistory((historyFromApi || []).map(transformTaskDataForFrontend).filter(Boolean));
+    } catch (err) { 
+        showError(err.message || "S'u mund të ngarkohej historiku."); 
+        setDeliveryHistory([]); 
+    } finally { 
+        setIsLoading(prev => ({ ...prev, deliveryHistory: false })); 
     }
-  }, [agent?.id, token, fetchActiveTaskOnLoad, fetchDeliveryHistory]);
+  }, [isAuthenticated, user, token, showError]);
 
-  useEffect(() => {
-    if (agent?.isOnline && token && !activeTask) { // Shto !activeTask për të mos e thirrur nëse ka detyrë aktive
-      fetchAvailableTasks();
-    } else if (!agent?.isOnline) {
-      setAvailableTasks([]);
-    }
-  }, [agent?.isOnline, token, fetchAvailableTasks, activeTask]); // Shto activeTask te dependency
-
-  const acceptAgentTask = async (orderIdString) => { 
-    if (!token || !agent || !agent.id) { 
-        showNotification("Agent details not available.", "error"); return;
-    }
-    if (activeTask) {
-        showNotification("Complete your current task first.", "error"); return;
-    }
-    const orderIdNumeric = parseInt(orderIdString, 10);
-    setIsLoadingTasks(true); 
-    try {
-      const acceptedOrderFromApi = await courierApi.acceptTask(orderIdNumeric, agent.id, token); 
-      setActiveTask(transformApiOrderToFrontendTask(acceptedOrderFromApi)); 
-      setAvailableTasks(prev => prev.filter(task => task.id !== orderIdString));
-      showNotification(`Task #${orderIdNumeric} accepted!`, 'success');
-    } catch (error) {
-      showNotification(error.message || 'Failed to accept task.', 'error');
-      fetchAvailableTasks(); 
-    } finally { setIsLoadingTasks(false); }
-  };
-
-  const updateActiveTaskStatus = async (newFrontendStatus) => { 
-    if (!token || !agent || !activeTask?.id) {
-      showNotification("No active task or agent details to update status.", "error");
-      return;
-    }
+  const toggleDriverAvailability = async () => { // Nuk ka nevojë për argument, merr statusin nga state-i lokal
+    if (!isAuthenticated || !(user?.role === 'DRIVER' || user?.role === 'DELIVERY_PERSONNEL') || !token) return;
     
-    let backendStatusPayload;
-    switch(newFrontendStatus) {
-        case 'picked_up': backendStatusPayload = 'PICKED_UP'; break; // Përputhe me modelet Django
-        case 'en_route': backendStatusPayload = 'ON_THE_WAY'; break;
-        case 'delivered': backendStatusPayload = 'DELIVERED'; break;
-        case 'cancelled': backendStatusPayload = 'CANCELLED_BY_DRIVER'; break; // Ose një status më gjenerik nëse backend-i e menaxhon
-        default:
-            showNotification(`Unknown status update: ${newFrontendStatus}`, 'error');
-            return;
-    }
-
-    setIsLoadingActiveTask(true);
+    const newAvailabilityApiPayload = !isDriverOnline; // Statusi që do t'i dërgohet API-së
+    setIsLoading(prev => ({ ...prev, availabilityToggle: true }));
     try {
-      const updatedOrderFromApi = await courierApi.updateOrderStatus(parseInt(activeTask.id), backendStatusPayload, token); 
-      const transformedUpdatedTask = transformApiOrderToFrontendTask(updatedOrderFromApi);
-
-      if (newFrontendStatus === 'delivered' || newFrontendStatus === 'cancelled') {
-        const historyEntry = { ...transformedUpdatedTask, status: newFrontendStatus, date: new Date().toISOString() }; 
-        setDeliveryHistory(prev => [historyEntry, ...prev.filter(h => h.id !== historyEntry.id)].sort((a,b) => new Date(b.date) - new Date(a.date)) );
-        if (newFrontendStatus === 'delivered') {
-            setTotalEarnings(prev => prev + (transformedUpdatedTask.payout || 0));
-        }
-        setActiveTask(null);
+      await courierApi.updateDriverAvailability(newAvailabilityApiPayload); // Dërgo statusin e ri
+      setIsDriverOnline(newAvailabilityApiPayload); // Përditëso UI menjëherë
+      if (fetchAndSetUser && token) await fetchAndSetUser(token); // Rifresko gjendjen e user-it globalisht
+      showSuccess(`Disponueshmëria: ${newAvailabilityApiPayload ? 'Online' : 'Offline'}`);
+      if (newAvailabilityApiPayload) { 
         fetchAvailableTasks(); 
-      } else {
-        setActiveTask(transformedUpdatedTask);
+        fetchActiveTask(); // Kontrollo nëse ka ndonjë detyrë aktive të papërfunduar
+      } else { 
+        setAvailableTasks([]); 
+        // Mos e bëj setActiveTask(null) këtu, pasi shoferi mund të dojë të përfundojë detyrën aktive para se të bëhet offline plotësisht
       }
-      showNotification(`Task status updated to ${newFrontendStatus.replace(/_/g, ' ')}.`, 'success');
-    } catch (error) {
-      showNotification('Failed to update task status: '+ error.message, 'error');
-    } finally { setIsLoadingActiveTask(false); }
+    } catch (err) { 
+        showError(err.message || "Gabim tek disponueshmëria.");
+        // Ktheje statusin e UI nëse API dështon (opsionale)
+        // setIsDriverOnline(isDriverOnline); 
+    } finally { 
+        setIsLoading(prev => ({ ...prev, availabilityToggle: false })); 
+    }
   };
 
-  const value = { 
-    availableTasks, activeTask, deliveryHistory, totalEarnings, 
-    fetchAvailableTasks, acceptAgentTask, updateActiveTaskStatus, fetchDeliveryHistory,
-    isLoadingTasks, isLoadingActiveTask, isLoadingHistory
+  const acceptTask = async (orderId) => {
+    if (!isAuthenticated || !(user?.role === 'DRIVER' || user?.role === 'DELIVERY_PERSONNEL') || activeTask || !token) {
+        showError(activeTask ? "Keni një detyrë aktive." : "Problem autentikimi."); return;
+    }
+    setIsLoading(prev => ({ ...prev, acceptTask: true, taskIdBeingAccepted: orderId }));
+    try {
+      const acceptedTaskData = await courierApi.acceptDeliveryTask(orderId);
+      setActiveTask(transformTaskDataForFrontend(acceptedTaskData));
+      setAvailableTasks(prev => prev.filter(task => task.id !== orderId));
+      showSuccess(`Detyra #${orderId} u pranua!`);
+    } catch (err) { 
+        showError(err.message || "Gabim gjatë pranimit. Mund të jetë marrë."); 
+        fetchAvailableTasks(); // Rifresko listën e detyrave
+    } finally { 
+        setIsLoading(prev => ({ ...prev, acceptTask: false, taskIdBeingAccepted: null })); 
+    }
   };
+
+  // Emri i funksionit duhet të përputhet me atë të komponentit: updateActiveTaskStatus
+  const updateActiveTaskStatus = async (newFrontendStatus) => {
+    if (!isAuthenticated || !activeTask || !activeTask.id || !token) { // Kontrollo edhe activeTask.id
+        showError("Nuk ka detyrë aktive për t'u përditësuar."); return;
+    }
+    const newBackendStatus = newFrontendStatus.toUpperCase().replace(/ /g, '_'); // P.sh., "picked up" -> "PICKED_UP"
+    
+    setIsLoading(prev => ({ ...prev, updateTaskStatus: true }));
+    try {
+      const updatedOrderFromApi = await courierApi.updateDeliveryStatus(activeTask.id, newBackendStatus);
+      showSuccess(`Statusi u ndryshua në "${newFrontendStatus}".`);
+      
+      const finalStatuses = ['DELIVERED', 'FAILED_DELIVERY', 'CANCELLED_BY_USER', 'CANCELLED_BY_RESTAURANT'];
+      if (finalStatuses.includes(newBackendStatus)) {
+        setActiveTask(null);
+        fetchDeliveryHistory(); // Rifresko historikun
+        if(isDriverOnline) fetchAvailableTasks(); // Kontrollo për detyra të reja vetëm nëse është online
+      } else {
+        setActiveTask(transformTaskDataForFrontend(updatedOrderFromApi));
+      }
+    } catch (err) { 
+        showError(err.message || "Gabim gjatë përditësimit të statusit."); 
+        // Mund të duhet të rifreskosh activeTask për të marrë statusin e fundit nga serveri në rast gabimi
+        fetchActiveTask();
+    } finally { 
+        setIsLoading(prev => ({ ...prev, updateTaskStatus: false })); 
+    }
+  };
+  
+  const totalEarnings = deliveryHistory.reduce((sum, task) => sum + (task.payout || 0), 0);
+
+  useEffect(() => {
+    if (isAuthenticated && (user?.role === 'DRIVER' || user?.role === 'DELIVERY_PERSONNEL') && token) {
+      if (isDriverOnline) {
+        fetchActiveTask();
+        fetchAvailableTasks();
+      } else {
+        setAvailableTasks([]);
+        // Mos e bëj activeTask null këtu nëse shoferi bëhet offline, ai mund të dojë ta përfundojë.
+        // fetchActiveTask() do ta trajtojë këtë.
+      }
+      fetchDeliveryHistory();
+    } else {
+      setAvailableTasks([]); setActiveTask(null); setDeliveryHistory([]); setIsDriverOnline(false);
+    }
+  }, [isAuthenticated, user, token, isDriverOnline, fetchAvailableTasks, fetchActiveTask, fetchDeliveryHistory]); // Shto isDriverOnline si dependencë
 
   return (
-    <TaskContext.Provider value={value}>
+    <TaskContext.Provider value={{
+        availableTasks, 
+        activeTask, 
+        deliveryHistory, 
+        isDriverOnline, 
+        totalEarnings, // Shtuar kjo
+        // Përdor emra më konsistentë për isLoading props
+        isLoadingAvailableTasks: isLoading.availableTasks,
+        isLoadingActiveTask: isLoading.activeTask,
+        isLoadingHistory: isLoading.deliveryHistory,
+        isLoadingAvailabilityToggle: isLoading.availabilityToggle,
+        isLoadingAcceptTask: isLoading.acceptTask,
+        isLoadingUpdateStatus: isLoading.updateTaskStatus,
+        taskIdBeingAccepted: isLoading.taskIdBeingAccepted,
+        
+        fetchAvailableTasks, 
+        fetchActiveTask, 
+        fetchDeliveryHistory,
+        toggleDriverAvailability, 
+        acceptTask, 
+        updateActiveTaskStatus, // Emri i saktë
+    }}>
       {children}
     </TaskContext.Provider>
   );
 };
+
 export const useTasks = () => {
-    const context = useContext(TaskContext);
-    if (context === undefined) {
-        throw new Error('useTasks must be used within a TaskProvider');
-    }
-    return context;
+  const context = useContext(TaskContext);
+  if (context === undefined) {
+    throw new Error('useTasks must be used within a TaskProvider');
+  }
+  return context;
 };
